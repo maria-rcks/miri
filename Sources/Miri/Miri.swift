@@ -3101,7 +3101,7 @@ final class Miri: NSObject, @unchecked Sendable {
                     identity: persistentIdentity(for: window),
                     workspace: workspaceIndex,
                     column: columnIndex,
-                    manualWidthRatio: window.manualWidthRatio
+                    manualWidthRatio: widthRatio(for: window)
                 )
             }
         }
@@ -3145,12 +3145,20 @@ final class Miri: NSObject, @unchecked Sendable {
 
         var usedSnapshotIndices = Set<Int>()
         var placements: [(state: PersistentWindowState, window: ManagedWindow)] = []
-        for window in tiledWindows() {
-            guard let state = persistentWindowState(for: window, in: snapshot, used: &usedSnapshotIndices) else {
-                continue
+        for (workspaceIndex, workspace) in workspaces.enumerated() {
+            for (columnIndex, window) in workspace.columns.enumerated() {
+                guard let state = persistentWindowState(
+                    for: window,
+                    currentWorkspace: workspaceIndex,
+                    currentColumn: columnIndex,
+                    in: snapshot,
+                    used: &usedSnapshotIndices
+                ) else {
+                    continue
+                }
+                window.manualWidthRatio = state.manualWidthRatio
+                placements.append((state, window))
             }
-            window.manualWidthRatio = state.manualWidthRatio
-            placements.append((state, window))
         }
 
         guard !placements.isEmpty else {
@@ -3216,15 +3224,66 @@ final class Miri: NSObject, @unchecked Sendable {
 
     private func persistentWindowState(
         for window: ManagedWindow,
+        currentWorkspace: Int,
+        currentColumn: Int,
         in snapshot: PersistentLayoutSnapshot,
         used: inout Set<Int>
     ) -> PersistentWindowState? {
         let identity = persistentIdentity(for: window)
-        for (index, state) in snapshot.windows.enumerated() where !used.contains(index) && state.identity == identity {
-            used.insert(index)
-            return state
+        if let exact = bestPersistentWindowState(
+            in: snapshot,
+            used: used,
+            currentWorkspace: currentWorkspace,
+            currentColumn: currentColumn,
+            matches: { $0.identity == identity }
+        ) {
+            used.insert(exact.index)
+            return exact.state
         }
+
+        if let bundleID = identity.bundleID,
+           let bundleMatch = bestPersistentWindowState(
+               in: snapshot,
+               used: used,
+               currentWorkspace: currentWorkspace,
+               currentColumn: currentColumn,
+               matches: { $0.identity.bundleID == bundleID }
+           )
+        {
+            used.insert(bundleMatch.index)
+            return bundleMatch.state
+        }
+
+        let normalizedAppName = identity.appName.lowercased()
+        if let appMatch = bestPersistentWindowState(
+            in: snapshot,
+            used: used,
+            currentWorkspace: currentWorkspace,
+            currentColumn: currentColumn,
+            matches: { $0.identity.appName.lowercased() == normalizedAppName }
+        ) {
+            used.insert(appMatch.index)
+            return appMatch.state
+        }
+
         return nil
+    }
+
+    private func bestPersistentWindowState(
+        in snapshot: PersistentLayoutSnapshot,
+        used: Set<Int>,
+        currentWorkspace: Int,
+        currentColumn: Int,
+        matches: (PersistentWindowState) -> Bool
+    ) -> (index: Int, state: PersistentWindowState)? {
+        var best: (index: Int, state: PersistentWindowState, score: Int)?
+        for (index, state) in snapshot.windows.enumerated() where !used.contains(index) && matches(state) {
+            let score = abs(state.workspace - currentWorkspace) * 100 + abs(state.column - currentColumn)
+            if best == nil || score < best!.score {
+                best = (index, state, score)
+            }
+        }
+        return best.map { ($0.index, $0.state) }
     }
 
     private func persistentIdentity(for window: ManagedWindow) -> PersistentWindowIdentity {
