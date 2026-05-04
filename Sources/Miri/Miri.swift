@@ -3465,7 +3465,7 @@ final class Miri: NSObject, @unchecked Sendable {
             setActiveWorkspace(loc.workspace)
             workspace.activeColumn = loc.column
             if changedFocus {
-                workspace.scrollOffset = nil
+                revealActiveColumnIfNeeded(in: workspace, viewport: currentViewport())
             }
             if applyLayout {
                 projectLayout(focusActiveWindow: false)
