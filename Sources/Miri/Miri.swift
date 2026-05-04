@@ -3274,6 +3274,28 @@ final class Miri: NSObject, @unchecked Sendable {
         tiledWindowLocation(for: element)?.window
     }
 
+    private func removeDestroyedWindowImmediately(_ element: AXUIElement) -> Bool {
+        if let location = tiledWindowLocation(for: element) {
+            let wasActiveWorkspace = activeWorkspace == location.workspaceIndex
+            let wasActiveWindow = wasActiveWorkspace && location.workspace.activeColumn == location.columnIndex
+            removeWindow(location.window, preferRightFocus: true)
+            if wasActiveWindow {
+                projectLayout(focusActiveWindow: true, layoutLockDelay: 0.02)
+            } else {
+                projectLayout(focusActiveWindow: false, layoutLockDelay: 0.02)
+            }
+            return true
+        }
+
+        if let window = floatingWindows.first(where: { sameWindow($0.element, element) }) {
+            removeWindow(window)
+            projectLayout(focusActiveWindow: false, layoutLockDelay: 0.02)
+            return true
+        }
+
+        return false
+    }
+
     private func updateManualWidthRatio(for element: AXUIElement) -> Bool {
         guard let location = tiledWindowLocation(for: element),
               let frame = axFrame(element)
@@ -3475,8 +3497,17 @@ final class Miri: NSObject, @unchecked Sendable {
             var pid: pid_t = 0
             AXUIElementGetPid(element, &pid)
             adoptFocusedWindow(pid: pid)
+        case kAXUIElementDestroyedNotification:
+            if removeDestroyedWindowImmediately(element) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                    self?.rescanWindows(adoptFocused: false)
+                }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                    self?.rescanWindows(adoptFocused: true)
+                }
+            }
         case kAXCreatedNotification,
-             kAXUIElementDestroyedNotification,
              kAXWindowMiniaturizedNotification,
              kAXWindowDeminiaturizedNotification,
              kAXApplicationHiddenNotification,
