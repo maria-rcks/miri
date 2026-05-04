@@ -4,6 +4,11 @@ import CoreGraphics
 import Darwin
 import Foundation
 
+struct RuleAppInfo {
+    let bundleID: String
+    let appName: String
+}
+
 struct MiriStatus {
     let workspace: Int
     let workspaceCount: Int
@@ -40,6 +45,7 @@ final class Miri: NSObject, @unchecked Sendable {
     private var appliedVisibility: [ObjectIdentifier: Bool] = [:]
     private var suppressFocusedWindowNotificationsUntil: CFAbsoluteTime = 0
     private var snapshotWriteTimer: DispatchSourceTimer?
+    @MainActor private var settingsWindowController: SettingsWindowController?
     private var excludedKeybindingSet = Set<String>()
     private var rescanTimer: Timer?
     private var isApplyingLayout = false
@@ -138,6 +144,63 @@ final class Miri: NSObject, @unchecked Sendable {
 
     func rescanFromMenu() {
         rescanWindows(adoptFocused: true)
+    }
+
+    @MainActor func showSettingsFromMenu() {
+        let apps = availableRuleApps()
+        if let settingsWindowController {
+            settingsWindowController.refresh(config: config, availableApps: apps)
+            settingsWindowController.showWindow(nil)
+            settingsWindowController.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let controller = SettingsWindowController(miri: self, config: config, availableApps: apps)
+        settingsWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor func saveConfigFromSettings(_ updatedConfig: MiriConfig) {
+        let url = loadedConfig.sourceURL ?? URL(fileURLWithPath: NSString(string: "~/.config/miri/config.json").expandingTildeInPath)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(updatedConfig)
+            try data.write(to: url, options: [.atomic])
+            loadedConfig.sourceModificationDate = nil
+            _ = reloadConfigIfNeeded()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not save Miri config"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
+    private func availableRuleApps() -> [RuleAppInfo] {
+        let windowApps = (tiledWindows() + floatingWindows).compactMap { window -> RuleAppInfo? in
+            guard let bundleID = window.bundleID, !bundleID.isEmpty else {
+                return nil
+            }
+            return RuleAppInfo(bundleID: bundleID, appName: window.appName)
+        }
+
+        let fallbackRunningApps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app -> RuleAppInfo? in
+                guard let bundleID = app.bundleIdentifier, !bundleID.isEmpty else {
+                    return nil
+                }
+                return RuleAppInfo(bundleID: bundleID, appName: app.localizedName ?? bundleID)
+            }
+
+        let apps = windowApps.isEmpty ? fallbackRunningApps : windowApps
+        var seen = Set<String>()
+        return apps.filter { seen.insert($0.bundleID).inserted }.sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
     }
 
     @MainActor func quitFromMenu() {

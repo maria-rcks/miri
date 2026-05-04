@@ -27,6 +27,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(focusedItem)
         menu.addItem(widthItem)
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Open Config", action: #selector(openConfig), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Rescan Windows", action: #selector(rescanWindows), keyEquivalent: ""))
@@ -48,6 +49,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         workspaceItem.title = "Workspace: \(status.workspace) of \(status.workspaceCount)"
         focusedItem.title = "Focused: \(status.focusedWindow)"
         widthItem.title = status.widthPercent.map { "Width: \($0)%" } ?? "Width: —"
+    }
+
+    @objc private func openSettings() {
+        miri?.showSettingsFromMenu()
     }
 
     @objc private func openConfig() {
