@@ -1712,6 +1712,12 @@ final class Miri: NSObject, @unchecked Sendable {
                     appName: appName,
                     title: title
                 )
+                if !isKnownWindow(element), isLikelyTransientPopup(window, app: app) {
+                    let frameDescription = axFrame(element).map { String(describing: $0) } ?? "nil"
+                    debugLog("ignoring transient popup \(appName) title='\(title)' frame=\(frameDescription)")
+                    setWindowAlpha(1, for: window.windowID)
+                    continue
+                }
                 guard behavior(for: window) != .ignore else {
                     setWindowAlpha(1, for: window.windowID)
                     continue
@@ -2495,6 +2501,34 @@ final class Miri: NSObject, @unchecked Sendable {
             return true
         }
         return isOpenAndSavePanelService(app)
+    }
+
+    private func isLikelyTransientPopup(_ window: ManagedWindow, app: NSRunningApplication) -> Bool {
+        // Chrome exposes toolbar bubbles (media controls, profiles, permissions, etc.) as
+        // small, settable AXWindows. Moving/focusing them makes Chrome dismiss the bubble,
+        // so treat them as app UI rather than tileable document windows.
+        guard isChromiumBrowser(app), window.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        guard let frame = axFrame(window.element) else {
+            return false
+        }
+        return frame.width <= 520 && frame.height <= 520
+    }
+
+    private func isChromiumBrowser(_ app: NSRunningApplication) -> Bool {
+        guard let bundleID = app.bundleIdentifier else {
+            return false
+        }
+        return bundleID == "com.google.Chrome"
+            || bundleID == "com.google.Chrome.beta"
+            || bundleID == "com.google.Chrome.dev"
+            || bundleID == "com.google.Chrome.canary"
+            || bundleID == "com.microsoft.edgemac"
+            || bundleID == "com.brave.Browser"
+            || bundleID == "com.vivaldi.Vivaldi"
+            || bundleID == "com.operasoftware.Opera"
+            || bundleID.hasPrefix("org.chromium.")
     }
 
     private func setWindowAlpha(_ alpha: Float, for windowID: UInt32?) {
