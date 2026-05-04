@@ -302,7 +302,7 @@ final class Miri: NSObject, @unchecked Sendable {
             return false
         }
 
-        let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])
+        let modifiers = event.flags
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let keyText = keyboardText(from: event)
@@ -451,9 +451,11 @@ final class Miri: NSObject, @unchecked Sendable {
     }
 
     private func normalizedKeybindingCandidates(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> [String] {
-        let modifierParts = normalizedModifierParts(from: modifiers)
-        return normalizedKeyNames(keyCode: keyCode, keyText: keyText).map { keyName in
-            (modifierParts + [keyName]).joined(separator: "+")
+        let modifierPartsList = normalizedModifierPartCandidates(from: modifiers)
+        return normalizedKeyNames(keyCode: keyCode, keyText: keyText).flatMap { keyName in
+            modifierPartsList.map { modifierParts in
+                (modifierParts + [keyName]).joined(separator: "+")
+            }
         }
     }
 
@@ -476,6 +478,10 @@ final class Miri: NSObject, @unchecked Sendable {
                 modifiers.insert("shift")
             case "alt", "option", "alternate":
                 modifiers.insert("alt")
+            case "lalt", "leftalt", "left_alt", "leftoption", "left_option", "left-option":
+                modifiers.insert("lalt")
+            case "ralt", "rightalt", "right_alt", "rightoption", "right_option", "right-option":
+                modifiers.insert("ralt")
             default:
                 key = normalizedKeyName(part)
             }
@@ -488,7 +494,7 @@ final class Miri: NSObject, @unchecked Sendable {
         return (orderedModifierParts(from: modifiers) + [key]).joined(separator: "+")
     }
 
-    private func normalizedModifierParts(from modifiers: CGEventFlags) -> [String] {
+    private func normalizedModifierPartCandidates(from modifiers: CGEventFlags) -> [[String]] {
         var names = Set<String>()
         if modifiers.contains(.maskCommand) {
             names.insert("cmd")
@@ -502,11 +508,28 @@ final class Miri: NSObject, @unchecked Sendable {
         if modifiers.contains(.maskAlternate) {
             names.insert("alt")
         }
-        return orderedModifierParts(from: names)
+
+        let generic = orderedModifierParts(from: names)
+        var candidates = [generic]
+
+        if modifiers.rawValue & 0x00000020 != 0, names.contains("alt") {
+            var leftAltNames = names
+            leftAltNames.remove("alt")
+            leftAltNames.insert("lalt")
+            candidates.append(orderedModifierParts(from: leftAltNames))
+        }
+        if modifiers.rawValue & 0x00000040 != 0, names.contains("alt") {
+            var rightAltNames = names
+            rightAltNames.remove("alt")
+            rightAltNames.insert("ralt")
+            candidates.append(orderedModifierParts(from: rightAltNames))
+        }
+
+        return candidates
     }
 
     private func orderedModifierParts(from modifiers: Set<String>) -> [String] {
-        ["cmd", "ctrl", "shift", "alt"].filter { modifiers.contains($0) }
+        ["cmd", "ctrl", "shift", "alt", "lalt", "ralt"].filter { modifiers.contains($0) }
     }
 
     private func normalizedKeyNames(keyCode: Int64, keyText: String) -> [String] {
