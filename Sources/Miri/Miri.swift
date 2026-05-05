@@ -810,10 +810,61 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     }
 
     private func normalizedKeybindingCandidates(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> [String] {
-        let modifierParts = normalizedModifierParts(from: modifiers)
-        return normalizedKeyNames(keyCode: keyCode, keyText: keyText).map { keyName in
-            (modifierParts + [keyName]).joined(separator: "+")
+        var candidates: [String] = []
+        let appendCandidates: ([String], [String]) -> Void = { modifierParts, keyNames in
+            for keyName in keyNames {
+                let candidate = (modifierParts + [keyName]).joined(separator: "+")
+                if !candidates.contains(candidate) {
+                    candidates.append(candidate)
+                }
+            }
         }
+
+        appendCandidates(
+            normalizedModifierParts(from: modifiers),
+            normalizedKeyNames(
+                keyCode: keyCode,
+                keyText: keyText,
+                includeFnNavigationAliases: modifiers.contains(.maskSecondaryFn)
+            )
+        )
+
+        if modifiers.contains(.maskSecondaryFn) {
+            var legacyModifiers = modifiers
+            legacyModifiers.remove(.maskSecondaryFn)
+            appendCandidates(
+                normalizedModifierParts(from: legacyModifiers),
+                normalizedKeyNames(keyCode: keyCode, keyText: keyText, includeFnNavigationAliases: false)
+            )
+        }
+
+        return candidates
+    }
+
+    private func normalizedKeyNames(keyCode: Int64, keyText: String, includeFnNavigationAliases: Bool) -> [String] {
+        var names: [String] = []
+        let add: (String) -> Void = { name in
+            let normalized = self.normalizedKeyName(name)
+            if !names.contains(normalized) {
+                names.append(normalized)
+            }
+        }
+
+        if !keyText.isEmpty {
+            add(keyText)
+        }
+
+        for name in Self.keyNamesByCode[keyCode] ?? [] {
+            add(name)
+        }
+
+        if includeFnNavigationAliases {
+            for name in Self.fnNavigationKeyAliasesByCode[keyCode] ?? [] {
+                add(name)
+            }
+        }
+
+        return names
     }
 
     private func normalizedKeybinding(_ binding: String) -> String? {
@@ -871,26 +922,6 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
     private func orderedModifierParts(from modifiers: Set<String>) -> [String] {
         ["cmd", "ctrl", "shift", "alt", "fn"].filter { modifiers.contains($0) }
-    }
-
-    private func normalizedKeyNames(keyCode: Int64, keyText: String) -> [String] {
-        var names: [String] = []
-        let add: (String) -> Void = { name in
-            let normalized = self.normalizedKeyName(name)
-            if !names.contains(normalized) {
-                names.append(normalized)
-            }
-        }
-
-        if !keyText.isEmpty {
-            add(keyText)
-        }
-
-        for name in Self.keyNamesByCode[keyCode] ?? [] {
-            add(name)
-        }
-
-        return names
     }
 
     private func normalizedKeyName(_ key: String) -> String {
@@ -982,6 +1013,17 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         KeyCode.f10: ["f10"],
         KeyCode.f11: ["f11"],
         KeyCode.f12: ["f12"],
+    ]
+
+    private static let fnNavigationKeyAliasesByCode: [Int64: [String]] = [
+        KeyCode.leftArrow: ["home"],
+        KeyCode.rightArrow: ["end"],
+        KeyCode.upArrow: ["pageup"],
+        KeyCode.downArrow: ["pagedown"],
+        KeyCode.home: ["left"],
+        KeyCode.end: ["right"],
+        KeyCode.pageUp: ["up"],
+        KeyCode.pageDown: ["down"],
     ]
 
     private static let keyNameAliases: [String: String] = [
