@@ -188,9 +188,86 @@ Extracted focused-window adoption, AX observer installation, AX notification han
 
 Extracted normal-exit window restoration and crash/kill restore snapshot writing.
 
+## Ported main-branch work
+
+After the refactor, selected changes from `main` were hand-ported instead of directly cherry-picked because this branch had a very different file layout.
+
+Ported areas:
+
+### Keybinding support
+
+Main-branch keybinding improvements were adapted into:
+
+- `Sources/Miri/Input/Input.swift`
+- `Sources/Miri/Input/KeybindingResolver.swift`
+
+This added support for:
+
+- broader ANSI letter key codes
+- punctuation keys
+- arrow/navigation keys
+- page up / page down
+- function keys
+- `fn` / Globe modifier
+- MacBook `fn` navigation aliases, e.g. `fn+left` can match `home`
+- expanded key name aliases such as `left-arrow`, `pgup`, `spacebar`, etc.
+
+### Floating window stacking
+
+Main's floating-window stacking fixes were adapted into:
+
+- `Sources/Miri/System/SkyLight.swift`
+- `Sources/Miri/Core/Miri.swift`
+- `Sources/Miri/Core/Models.swift`
+- `Sources/Miri/Layout/MiriLayoutApplication.swift`
+- `Sources/Miri/Layout/MiriLayoutAnimation.swift`
+- `Sources/Miri/Persistence/MiriExitRestoration.swift`
+- `Sources/Miri/Persistence/Restoration.swift`
+
+This added:
+
+- `SkyLight.setLevel` support
+- floating-window level restoration/raising
+- delayed floating-window raise after layout/focus changes
+- floating-window IDs in exit/crash restore snapshots
+- cleanup restoration that resets alpha and window level
+
+### Layout animation visibility
+
+Main's animation visibility improvements were adapted into:
+
+- `Sources/Miri/Core/Models.swift`
+- `Sources/Miri/Layout/MiriLayoutAnimation.swift`
+
+This added `startsVisible` / `endsVisible` tracking to `WindowMotion` so windows entering a layout animation can be revealed at the right point instead of flashing too early.
+
+### Release packaging
+
+Main's release packaging was added as:
+
+- `.github/workflows/release.yml`
+- `scripts/package-macos.sh`
+
+The existing local helper was updated:
+
+- `scripts/package-app.sh`
+
+`package-app.sh` now delegates to `package-macos.sh`, while preserving the old local-dev behavior of leaving a directly openable app at:
+
+```text
+dist/Miri.app
+```
+
+`package-macos.sh` also produces a versioned DMG in `dist/`.
+
+Main's older menu bar status menu commits were intentionally not ported because this branch already has the newer status/menu implementation under:
+
+- `Sources/Miri/UI/StatusMenu/`
+- `Sources/Miri/Core/MiriStatusProvider.swift`
+
 ## Build status
 
-The project was built after each refactoring batch.
+The project was built after each refactoring and porting batch.
 
 Final verification:
 
