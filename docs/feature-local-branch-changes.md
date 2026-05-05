@@ -8,9 +8,9 @@ Generated: 2026-05-05
 
 ## Executive summary
 
-This branch turns Miri from a headless-style window manager into a more user-facing macOS accessory app with a menu bar status item, settings editor, richer configuration, better persistence, and several stability fixes around hidden, minimized, fullscreen, destroyed, and transient windows. It also changes the default keybindings from Command-based shortcuts to left Option-based shortcuts and adds packaging support for a signed app bundle.
+This branch turns Miri from a headless-style window manager into a more user-facing macOS accessory app with a menu bar status item, settings editor, richer configuration, better persistence, and several stability fixes around hidden, minimized, fullscreen, destroyed, transient windows, and macOS event-tap interruptions. It also changes the default keybindings from Command-based shortcuts to left Option-based shortcuts and adds packaging support for a signed app bundle.
 
-Overall diff: 8 files changed, 2004 insertions, 150 deletions.
+Overall diff: 9 files changed, 2316 insertions, 153 deletions.
 
 ## Files changed
 
@@ -31,6 +31,7 @@ Overall diff: 8 files changed, 2004 insertions, 150 deletions.
   - Handles destroyed windows immediately.
   - Filters Chromium transient/picture-in-picture windows.
   - Adds AX/debug logging helpers.
+  - Re-enables the keyboard/mouse event tap if macOS disables it.
 - `Sources/Miri/SettingsWindowController.swift`
   - New AppKit settings window for editing config.
 - `Sources/Miri/StatusMenuController.swift`
@@ -173,13 +174,22 @@ Window state preservation was improved across macOS window state transitions:
 - Helium is included in the Chromium browser list.
 - Deduplicated AX diagnostics are written to the debug log when debug logging is enabled.
 
-### 11. Packaging and generated output
+### 11. Event tap recovery
+
+- The CGEvent tap callback now handles macOS tap disable events:
+  - `.tapDisabledByTimeout`
+  - `.tapDisabledByUserInput`
+- When either event is received, Miri re-enables its event tap instead of silently staying inert.
+- Debug logging records the recovery path, e.g. `event tap re-enabled after ...`.
+- This addresses cases where launching heavy/input-intensive apps such as Unity can leave Miri running but no longer reacting to keyboard shortcuts.
+
+### 12. Packaging and generated output
 
 - `scripts/package-app.sh` builds a macOS `.app` bundle under `dist/`.
 - The package script signs the bundle so the app has a stable identity for macOS permissions.
 - `dist/` is ignored in Git.
 
-### 12. Sample config changes
+### 13. Sample config changes
 
 The bundled `miri.config.json` was updated to reflect the new branch defaults:
 
@@ -292,3 +302,9 @@ The bundled `miri.config.json` was updated to reflect the new branch defaults:
 - Broadened title/subrole heuristics.
 - Adds Helium to Chromium browser list.
 - Adds deduplicated AX diagnostics for raw/discovered windows and notifications.
+
+### `84467ed` — Re-enable the event tap when macOS disables it
+
+- Handles `.tapDisabledByTimeout` and `.tapDisabledByUserInput` in the CGEvent tap callback.
+- Re-enables the existing event tap when macOS disables it.
+- Adds debug logging for event tap recovery.
