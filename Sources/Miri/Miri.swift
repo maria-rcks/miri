@@ -14,7 +14,7 @@ final class Miri: NSObject, @unchecked Sendable {
         loadedConfig.config
     }
     var workspaces: [Workspace] = [Workspace()]
-    private var floatingWindows: [ManagedWindow] = []
+    var floatingWindows: [ManagedWindow] = []
     var activeWorkspace: Int = 0
     private weak var previousWorkspace: Workspace?
     private var observers: [pid_t: AXObserver] = [:]
@@ -33,14 +33,14 @@ final class Miri: NSObject, @unchecked Sendable {
     var debugLoggedWindowSignatures = Set<String>()
     var isApplyingLayout = false
     var animationTimer: DispatchSourceTimer?
-    private var hoverFocusTimer: DispatchSourceTimer?
-    private var hoverFocusTarget: ObjectIdentifier?
-    private var hoverFocusRequiresRearm = false
-    private var hoverFocusSuppressedUntil: CFAbsoluteTime = 0
+    var hoverFocusTimer: DispatchSourceTimer?
+    var hoverFocusTarget: ObjectIdentifier?
+    var hoverFocusRequiresRearm = false
+    var hoverFocusSuppressedUntil: CFAbsoluteTime = 0
     private var transientWindowActive = false
     private var transientWindowStateCheckedAt: CFAbsoluteTime = 0
     private var trackpadNavigation: ThreeFingerTrackpadNavigation?
-    private var trackpadCameraY: CGFloat?
+    var trackpadCameraY: CGFloat?
     private var trackpadCameraVelocity = CGPoint.zero
     private var trackpadPendingCameraDelta = CGSize.zero
     private var trackpadLatestCameraVelocity = CGPoint.zero
@@ -48,7 +48,7 @@ final class Miri: NSObject, @unchecked Sendable {
     private var trackpadMomentumTimer: DispatchSourceTimer?
     private var trackpadMomentumLastFrameAt: CFAbsoluteTime = 0
     private var manualResizeEndTimer: DispatchSourceTimer?
-    private var manualResizeElement: AXUIElement?
+    var manualResizeElement: AXUIElement?
     private var manualResizeSuppressedUntil: CFAbsoluteTime = 0
     var presentationFrames: [ObjectIdentifier: CGRect] = [:]
     lazy var persistentLayoutSnapshot = readPersistentLayoutSnapshot()
@@ -483,40 +483,6 @@ final class Miri: NSObject, @unchecked Sendable {
         return true
     }
 
-    fileprivate func handleMouseMoved(_ event: CGEvent) {
-        guard hoverFocusEnabled,
-              !transientSystemWindowIsActive(),
-              manualResizeElement == nil,
-              animationTimer == nil,
-              !isApplyingLayout
-        else {
-            cancelHoverFocus()
-            return
-        }
-
-        guard CFAbsoluteTimeGetCurrent() >= hoverFocusSuppressedUntil else {
-            cancelHoverFocus()
-            return
-        }
-
-        let point = event.location
-        if shouldSuppressHoverFocusUntilRearmed(at: point) {
-            cancelHoverFocus()
-            return
-        }
-
-        guard let target = hoverFocusTarget(at: point) else {
-            cancelHoverFocus()
-            return
-        }
-
-        if target.immediate {
-            performHoverFocus(window: target.window, workspaceIndex: target.workspaceIndex, columnIndex: target.columnIndex)
-        } else {
-            scheduleHoverFocus(for: target.window, workspaceIndex: target.workspaceIndex, columnIndex: target.columnIndex)
-        }
-    }
-
     private func handleTrackpadNavigationEvent(_ event: TrackpadNavigationEvent) {
         guard trackpadNavigationEnabled,
               !transientSystemWindowIsActive(),
@@ -610,11 +576,6 @@ final class Miri: NSObject, @unchecked Sendable {
         let speed = hypot(velocity.x, velocity.y)
         let extra = min(max((speed - 0.35) / 1.4, 0), trackpadNavigationVelocityGain)
         return 1 + extra
-    }
-
-    private func suppressHoverFocusAfterTrackpadMovement() {
-        hoverFocusSuppressedUntil = CFAbsoluteTimeGetCurrent() + hoverFocusAfterTrackpad
-        cancelHoverFocus()
     }
 
     private func seedTrackpadCamera(viewport: CGRect) {
@@ -798,7 +759,7 @@ final class Miri: NSObject, @unchecked Sendable {
         trackpadCameraVelocity = .zero
     }
 
-    private func freezeTrackpadCameraForTransition() {
+    func freezeTrackpadCameraForTransition() {
         stopTrackpadRenderLoop()
         stopTrackpadMomentum()
 
@@ -1222,14 +1183,14 @@ final class Miri: NSObject, @unchecked Sendable {
         return true
     }
 
-    private func activeWorkspaceObject() -> Workspace? {
+    func activeWorkspaceObject() -> Workspace? {
         guard workspaces.indices.contains(activeWorkspace) else {
             return nil
         }
         return workspaces[activeWorkspace]
     }
 
-    private func captureLayoutState() -> LayoutState {
+    func captureLayoutState() -> LayoutState {
         LayoutState(
             activeWorkspace: min(max(activeWorkspace, 0), max(workspaces.count - 1, 0)),
             activeColumns: workspaces.map(\.activeColumn),
@@ -1739,7 +1700,7 @@ final class Miri: NSObject, @unchecked Sendable {
         }
     }
 
-    private func projectLayout(
+    func projectLayout(
         focusActiveWindow: Bool,
         animated: Bool = false,
         from previousState: LayoutState? = nil,
@@ -1818,7 +1779,7 @@ final class Miri: NSObject, @unchecked Sendable {
         return layout
     }
 
-    private func activeColumn(in workspace: Workspace, workspaceIndex: Int, state: LayoutState) -> Int {
+    func activeColumn(in workspace: Workspace, workspaceIndex: Int, state: LayoutState) -> Int {
         let activeColumn = state.activeColumns.indices.contains(workspaceIndex)
             ? state.activeColumns[workspaceIndex]
             : workspace.activeColumn
@@ -1896,7 +1857,7 @@ final class Miri: NSObject, @unchecked Sendable {
         }
     }
 
-    private func transientSystemWindowIsActive(forceRefresh: Bool = false) -> Bool {
+    func transientSystemWindowIsActive(forceRefresh: Bool = false) -> Bool {
         let now = CFAbsoluteTimeGetCurrent()
         if !forceRefresh, now - transientWindowStateCheckedAt < 0.25 {
             return transientWindowActive
@@ -2088,439 +2049,6 @@ final class Miri: NSObject, @unchecked Sendable {
         SkyLight.shared.setAlpha(alpha, for: windowID)
     }
 
-    private func hoverFocusTarget(
-        at point: CGPoint
-    ) -> (window: ManagedWindow, workspaceIndex: Int, columnIndex: Int, immediate: Bool)? {
-        guard let workspace = activeWorkspaceObject(),
-              !workspace.columns.isEmpty
-        else {
-            return nil
-        }
-
-        let viewport = currentViewport()
-        guard viewportContains(point, viewport: viewport) else {
-            return nil
-        }
-
-        let state = captureLayoutState()
-        let layout = layoutItems(viewport: viewport, state: state, parkHidden: false)
-        for item in layout where item.visible && item.frame.contains(point) {
-            guard hoverToFocusAllowed(for: item.window) else {
-                continue
-            }
-            guard let loc = location(of: item.window.element), loc.workspace == activeWorkspace else {
-                continue
-            }
-            if loc.column == workspace.activeColumn {
-                return nil
-            }
-            let immediate = hoverFocusMode == .edgeOrVisible
-                && hoverFocusEdgeTrigger(
-                    targetColumn: loc.column,
-                    activeColumn: workspace.activeColumn,
-                    point: point,
-                    viewport: viewport
-                )
-            guard immediate || hoverFocusCanScroll(
-                toColumn: loc.column,
-                in: workspace,
-                workspaceIndex: loc.workspace,
-                state: state,
-                viewport: viewport,
-                targetFrame: item.frame,
-                point: point
-            ) else {
-                continue
-            }
-            return (item.window, loc.workspace, loc.column, immediate)
-        }
-
-        return nil
-    }
-
-    private func viewportContains(_ point: CGPoint, viewport: CGRect) -> Bool {
-        point.x >= viewport.minX
-            && point.x <= viewport.maxX
-            && point.y >= viewport.minY
-            && point.y <= viewport.maxY
-    }
-
-    private func visualFrame(_ frame: CGRect, viewport: CGRect) -> CGRect {
-        guard innerGap > 0 else {
-            return frame
-        }
-
-        let inset = min(innerGap / 2, frame.width / 3, frame.height / 3)
-        return frame.insetBy(dx: inset, dy: inset)
-    }
-
-    private func insetViewport(_ viewport: CGRect, by inset: CGFloat) -> CGRect {
-        guard inset > 0 else {
-            return viewport
-        }
-
-        let safeInset = min(inset, viewport.width / 3, viewport.height / 3)
-        return viewport.insetBy(dx: safeInset, dy: safeInset)
-    }
-
-    private func hoverFocusEdgeTrigger(
-        targetColumn: Int,
-        activeColumn: Int,
-        point: CGPoint,
-        viewport: CGRect
-    ) -> Bool {
-        if targetColumn > activeColumn {
-            return point.x >= viewport.maxX - hoverFocusEdgeTriggerWidth
-        }
-        if targetColumn < activeColumn {
-            return point.x <= viewport.minX + hoverFocusEdgeTriggerWidth
-        }
-        return false
-    }
-
-    private func hoverFocusCanScroll(
-        toColumn targetColumn: Int,
-        in workspace: Workspace,
-        workspaceIndex: Int,
-        state: LayoutState,
-        viewport: CGRect,
-        targetFrame: CGRect,
-        point: CGPoint
-    ) -> Bool {
-        guard viewport.width > 0 else {
-            return false
-        }
-
-        guard workspace.columns.indices.contains(targetColumn) else {
-            return false
-        }
-
-        let activeColumn = activeColumn(in: workspace, workspaceIndex: workspaceIndex, state: state)
-        let requiredDepth = viewport.width * hoverFocusMaxScrollRatio
-        guard requiredDepth > 0 else {
-            return false
-        }
-
-        let visibleTargetFrame = targetFrame.intersection(viewport)
-        guard !visibleTargetFrame.isNull else {
-            return false
-        }
-
-        if targetColumn > activeColumn {
-            return point.x - visibleTargetFrame.minX >= requiredDepth
-        }
-        if targetColumn < activeColumn {
-            return visibleTargetFrame.maxX - point.x >= requiredDepth
-        }
-        return false
-    }
-
-    private func scheduleHoverFocus(for window: ManagedWindow, workspaceIndex: Int, columnIndex: Int) {
-        let id = ObjectIdentifier(window)
-        if hoverFocusTarget == id {
-            return
-        }
-
-        cancelHoverFocus()
-        hoverFocusTarget = id
-
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + hoverFocusDelay, leeway: .milliseconds(20))
-        timer.setEventHandler { [weak self, weak window] in
-            guard let self, let window else {
-                return
-            }
-            performHoverFocus(window: window, workspaceIndex: workspaceIndex, columnIndex: columnIndex)
-        }
-        hoverFocusTimer = timer
-        timer.resume()
-    }
-
-    private func performHoverFocus(window: ManagedWindow, workspaceIndex: Int, columnIndex: Int) {
-        hoverFocusTimer?.cancel()
-        hoverFocusTimer = nil
-        hoverFocusTarget = nil
-
-        guard hoverFocusEnabled,
-              manualResizeElement == nil,
-              animationTimer == nil,
-              workspaces.indices.contains(workspaceIndex),
-              workspaces[workspaceIndex].columns.indices.contains(columnIndex),
-              workspaces[workspaceIndex].columns[columnIndex] === window
-        else {
-            return
-        }
-
-        let workspace = workspaces[workspaceIndex]
-        guard activeWorkspace != workspaceIndex || workspace.activeColumn != columnIndex else {
-            return
-        }
-
-        freezeTrackpadCameraForTransition()
-        let previousState = captureLayoutState()
-        trackpadCameraY = nil
-        setActiveWorkspace(workspaceIndex)
-        workspace.activeColumn = columnIndex
-        workspace.scrollOffset = nil
-        let newState = captureLayoutState()
-        hoverFocusRequiresRearm = true
-        projectLayout(
-            focusActiveWindow: true,
-            animated: previousState != newState,
-            from: previousState,
-            animationDuration: hoverFocusAnimationDuration
-        )
-    }
-
-    private func cancelHoverFocus() {
-        hoverFocusTimer?.cancel()
-        hoverFocusTimer = nil
-        hoverFocusTarget = nil
-    }
-
-    private func shouldSuppressHoverFocusUntilRearmed(at point: CGPoint) -> Bool {
-        guard hoverFocusRequiresRearm else {
-            return false
-        }
-
-        if hoverFocusTarget(at: point) == nil {
-            hoverFocusRequiresRearm = false
-            return false
-        }
-
-        return true
-    }
-
-    private func stripFrames(
-        for workspace: Workspace,
-        viewport: CGRect,
-        activeColumn: Int,
-        scrollOffset preferredScrollOffset: CGFloat?
-    ) -> [CGRect] {
-        guard !workspace.columns.isEmpty else {
-            return []
-        }
-
-        let metrics = stripMetrics(for: workspace, viewport: viewport)
-        let scrollOffset = preferredScrollOffset ?? defaultScrollOffset(
-            metrics: metrics,
-            activeColumn: activeColumn,
-            viewport: viewport
-        )
-        return workspace.columns.indices.map { index in
-            CGRect(
-                x: viewport.minX + metrics.origins[index] - scrollOffset,
-                y: viewport.minY,
-                width: metrics.widths[index],
-                height: viewport.height
-            )
-        }
-    }
-
-    private func stripMetrics(for workspace: Workspace, viewport: CGRect) -> (origins: [CGFloat], widths: [CGFloat]) {
-        var virtualX: CGFloat = 0
-        var origins: [CGFloat] = []
-        var widths: [CGFloat] = []
-
-        for window in workspace.columns {
-            origins.append(virtualX)
-            let width = viewport.width * widthRatio(for: window)
-            widths.append(width)
-            virtualX += width
-        }
-
-        return (origins, widths)
-    }
-
-    private func revealActiveColumnIfNeeded(in workspace: Workspace, viewport: CGRect) {
-        guard !workspace.columns.isEmpty,
-              workspace.columns.indices.contains(workspace.activeColumn),
-              viewport.width > 0
-        else {
-            workspace.scrollOffset = nil
-            return
-        }
-
-        let metrics = stripMetrics(for: workspace, viewport: viewport)
-        guard metrics.origins.indices.contains(workspace.activeColumn),
-              metrics.widths.indices.contains(workspace.activeColumn)
-        else {
-            workspace.scrollOffset = nil
-            return
-        }
-
-        let currentOffset = horizontalCameraOffset(for: workspace, viewport: viewport)
-        let columnMinX = metrics.origins[workspace.activeColumn]
-        let columnMaxX = columnMinX + metrics.widths[workspace.activeColumn]
-        var targetOffset = currentOffset
-
-        if columnMinX < currentOffset {
-            targetOffset = columnMinX
-        } else if columnMaxX > currentOffset + viewport.width {
-            targetOffset = columnMaxX - viewport.width
-        }
-
-        let maxOffset = maxHorizontalCameraOffset(for: workspace, viewport: viewport)
-        targetOffset = min(max(targetOffset, 0), maxOffset)
-        workspace.scrollOffset = targetOffset
-    }
-
-    private func horizontalCameraOffset(for workspace: Workspace, viewport: CGRect) -> CGFloat {
-        if let scrollOffset = workspace.scrollOffset {
-            return min(max(scrollOffset, 0), maxHorizontalCameraOffset(for: workspace, viewport: viewport))
-        }
-
-        let metrics = stripMetrics(for: workspace, viewport: viewport)
-        let activeColumn = min(max(workspace.activeColumn, 0), max(workspace.columns.count - 1, 0))
-        return defaultScrollOffset(metrics: metrics, activeColumn: activeColumn, viewport: viewport)
-    }
-
-    private func maxHorizontalCameraOffset(for workspace: Workspace, viewport: CGRect) -> CGFloat {
-        guard !workspace.columns.isEmpty else {
-            return 0
-        }
-
-        let metrics = stripMetrics(for: workspace, viewport: viewport)
-        let contentWidth = zip(metrics.origins, metrics.widths)
-            .map { $0.0 + $0.1 }
-            .max() ?? viewport.width
-        let lastColumnOffset = defaultScrollOffset(
-            metrics: metrics,
-            activeColumn: workspace.columns.count - 1,
-            viewport: viewport
-        )
-        return max(0, contentWidth - viewport.width, lastColumnOffset)
-    }
-
-    private func closestColumn(to scrollOffset: CGFloat, in workspace: Workspace, viewport: CGRect) -> Int {
-        guard !workspace.columns.isEmpty else {
-            return 0
-        }
-
-        let metrics = stripMetrics(for: workspace, viewport: viewport)
-        let cameraCenter = scrollOffset + viewport.width / 2
-        var closestIndex = 0
-        var closestDistance = CGFloat.greatestFiniteMagnitude
-        for index in workspace.columns.indices {
-            guard metrics.origins.indices.contains(index), metrics.widths.indices.contains(index) else {
-                continue
-            }
-
-            let columnCenter = metrics.origins[index] + metrics.widths[index] / 2
-            let distance = abs(columnCenter - cameraCenter)
-            if distance < closestDistance {
-                closestDistance = distance
-                closestIndex = index
-            }
-        }
-
-        return closestIndex
-    }
-
-    private func mostVisibleColumn(in workspace: Workspace, viewport: CGRect, scrollOffset: CGFloat) -> Int {
-        guard !workspace.columns.isEmpty else {
-            return 0
-        }
-
-        let frames = stripFrames(
-            for: workspace,
-            viewport: viewport,
-            activeColumn: workspace.activeColumn,
-            scrollOffset: scrollOffset
-        )
-        var bestIndex = closestColumn(to: scrollOffset, in: workspace, viewport: viewport)
-        var bestVisibleWidth: CGFloat = 0
-        for index in frames.indices {
-            let visibleFrame = visualFrame(frames[index], viewport: viewport).intersection(viewport)
-            let visibleWidth = visibleFrame.isNull ? 0 : visibleFrame.width
-            if visibleWidth > bestVisibleWidth {
-                bestVisibleWidth = visibleWidth
-                bestIndex = index
-            }
-        }
-        return bestIndex
-    }
-
-    private func defaultScrollOffset(
-        metrics: (origins: [CGFloat], widths: [CGFloat]),
-        activeColumn: Int,
-        viewport: CGRect
-    ) -> CGFloat {
-        guard metrics.origins.indices.contains(activeColumn),
-              metrics.widths.indices.contains(activeColumn)
-        else {
-            return 0
-        }
-
-        switch focusAlignment {
-        case .left:
-            return metrics.origins[activeColumn]
-        case .smart where activeColumn == 0:
-            return metrics.origins.indices.contains(activeColumn) ? metrics.origins[activeColumn] : 0
-        case .smart, .center:
-            let activeCenter = metrics.origins[activeColumn] + metrics.widths[activeColumn] / 2
-            return max(0, activeCenter - viewport.width / 2)
-        }
-    }
-
-    private func parkedFrame(for window: ManagedWindow, viewport: CGRect, beforeActive: Bool) -> CGRect {
-        let width = viewport.width * widthRatio(for: window)
-        var frame = CGRect(x: viewport.minX, y: viewport.minY, width: width, height: viewport.height)
-        frame.origin.x = beforeActive
-            ? viewport.minX - width + parkedSliverWidth
-            : viewport.maxX - parkedSliverWidth
-        return frame
-    }
-
-    func widthRatio(for window: ManagedWindow) -> CGFloat {
-        if let manualWidthRatio = window.manualWidthRatio {
-            return manualWidthRatio.clampedManualWidthRatio
-        }
-
-        for rule in config.rules where rule.matches(window) {
-            if let widthRatio = rule.widthRatio {
-                return widthRatio.clampedWidthRatio
-            }
-        }
-        return config.defaultWidthRatio.clampedWidthRatio
-    }
-
-    private func behavior(for window: ManagedWindow) -> WindowBehavior {
-        for rule in config.rules where rule.matches(window) {
-            if let behavior = rule.behavior {
-                return behavior
-            }
-        }
-        return .tile
-    }
-
-    private func rule(for window: ManagedWindow) -> WindowRule? {
-        config.rules.first { $0.matches(window) }
-    }
-
-    private func hoverToFocusAllowed(for window: ManagedWindow) -> Bool {
-        rule(for: window)?.hoverToFocus ?? true
-    }
-
-    private var trackpadNavigationAllowedForActiveWindow: Bool {
-        guard let window = activeWindow() else {
-            return true
-        }
-        return rule(for: window)?.trackpadNavigation ?? true
-    }
-
-    private func currentViewport() -> CGRect {
-        guard let screen = NSScreen.main else {
-            return insetViewport(CGDisplayBounds(CGMainDisplayID()), by: outerGap)
-        }
-
-        let visible = screen.visibleFrame
-        let screenFrame = screen.frame
-        let axY = screenFrame.maxY - visible.maxY
-        let viewport = CGRect(x: visible.minX, y: axY, width: visible.width, height: visible.height)
-        return insetViewport(viewport, by: outerGap)
-    }
-
     private func focus(_ window: ManagedWindow) {
         setWindowAlpha(1, for: window.windowID)
         suppressFocusedWindowNotificationsUntil = CFAbsoluteTimeGetCurrent() + 0.2
@@ -2529,22 +2057,6 @@ final class Miri: NSObject, @unchecked Sendable {
         }
         AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(window.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-    }
-
-    func activeWindow() -> ManagedWindow? {
-        guard let workspace = activeWorkspaceObject(), !workspace.columns.isEmpty else {
-            return nil
-        }
-        workspace.clampFocus()
-        return workspace.columns[workspace.activeColumn]
-    }
-
-    private func allWindows() -> [ManagedWindow] {
-        workspaces.flatMap(\.columns) + floatingWindows
-    }
-
-    private func tiledWindows() -> [ManagedWindow] {
-        workspaces.flatMap(\.columns)
     }
 
     private func restoreManagedWindowsForExit() {
@@ -2581,7 +2093,7 @@ final class Miri: NSObject, @unchecked Sendable {
         try? data.write(to: restoreStateURL, options: [.atomic])
     }
 
-    private func location(of element: AXUIElement) -> (workspace: Int, column: Int)? {
+    func location(of element: AXUIElement) -> (workspace: Int, column: Int)? {
         for (workspaceIndex, workspace) in workspaces.enumerated() {
             for (columnIndex, window) in workspace.columns.enumerated() where sameWindow(window.element, element) {
                 return (workspaceIndex, columnIndex)
