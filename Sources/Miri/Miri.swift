@@ -835,6 +835,8 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
                 modifiers.insert("shift")
             case "alt", "option", "alternate":
                 modifiers.insert("alt")
+            case "fn", "function", "globe":
+                modifiers.insert("fn")
             default:
                 key = normalizedKeyName(part)
             }
@@ -861,11 +863,14 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         if modifiers.contains(.maskAlternate) {
             names.insert("alt")
         }
+        if modifiers.contains(.maskSecondaryFn) {
+            names.insert("fn")
+        }
         return orderedModifierParts(from: names)
     }
 
     private func orderedModifierParts(from modifiers: Set<String>) -> [String] {
-        ["cmd", "ctrl", "shift", "alt"].filter { modifiers.contains($0) }
+        ["cmd", "ctrl", "shift", "alt", "fn"].filter { modifiers.contains($0) }
     }
 
     private func normalizedKeyNames(keyCode: Int64, keyText: String) -> [String] {
@@ -892,24 +897,81 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         case KeyCode.eight: add("8")
         case KeyCode.nine: add("9")
         case KeyCode.zero: add("0")
+        case KeyCode.a: add("a")
+        case KeyCode.b: add("b")
+        case KeyCode.c: add("c")
+        case KeyCode.d: add("d")
+        case KeyCode.e: add("e")
+        case KeyCode.f: add("f")
+        case KeyCode.g: add("g")
         case KeyCode.h: add("h")
+        case KeyCode.i: add("i")
         case KeyCode.j: add("j")
         case KeyCode.k: add("k")
         case KeyCode.l: add("l")
+        case KeyCode.m: add("m")
+        case KeyCode.n: add("n")
+        case KeyCode.o: add("o")
+        case KeyCode.p: add("p")
+        case KeyCode.q: add("q")
+        case KeyCode.r: add("r")
+        case KeyCode.s: add("s")
+        case KeyCode.t: add("t")
+        case KeyCode.u: add("u")
+        case KeyCode.v: add("v")
+        case KeyCode.w: add("w")
+        case KeyCode.x: add("x")
+        case KeyCode.y: add("y")
+        case KeyCode.z: add("z")
         case KeyCode.minus:
             add("-")
             add("minus")
         case KeyCode.equal:
             add("=")
             add("equal")
-        case KeyCode.home: add("home")
-        case KeyCode.end: add("end")
         case KeyCode.leftBracket:
             add("[")
             add("{")
         case KeyCode.rightBracket:
             add("]")
             add("}")
+        case KeyCode.semicolon: add(";")
+        case KeyCode.quote: add("'")
+        case KeyCode.comma: add(",")
+        case KeyCode.period: add(".")
+        case KeyCode.slash: add("/")
+        case KeyCode.backslash: add("\\")
+        case KeyCode.grave: add("`")
+        case KeyCode.tab: add("tab")
+        case KeyCode.space: add("space")
+        case KeyCode.returnKey:
+            add("return")
+            add("enter")
+        case KeyCode.escape: add("escape")
+        case KeyCode.delete:
+            add("delete")
+            add("backspace")
+        case KeyCode.forwardDelete: add("forward-delete")
+        case KeyCode.home: add("home")
+        case KeyCode.end: add("end")
+        case KeyCode.pageUp: add("pageup")
+        case KeyCode.pageDown: add("pagedown")
+        case KeyCode.leftArrow: add("left")
+        case KeyCode.rightArrow: add("right")
+        case KeyCode.upArrow: add("up")
+        case KeyCode.downArrow: add("down")
+        case KeyCode.f1: add("f1")
+        case KeyCode.f2: add("f2")
+        case KeyCode.f3: add("f3")
+        case KeyCode.f4: add("f4")
+        case KeyCode.f5: add("f5")
+        case KeyCode.f6: add("f6")
+        case KeyCode.f7: add("f7")
+        case KeyCode.f8: add("f8")
+        case KeyCode.f9: add("f9")
+        case KeyCode.f10: add("f10")
+        case KeyCode.f11: add("f11")
+        case KeyCode.f12: add("f12")
         default:
             break
         }
@@ -927,10 +989,46 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return "{"
         case "rightbrace", "right-brace", "closebrace", "close-brace":
             return "}"
-        case "minus":
+        case "minus", "hyphen", "dash":
             return "-"
-        case "equal":
+        case "equal", "equals":
             return "="
+        case "semicolon":
+            return ";"
+        case "quote", "apostrophe", "singlequote", "single-quote":
+            return "'"
+        case "comma":
+            return ","
+        case "period", "dot", "fullstop", "full-stop":
+            return "."
+        case "slash", "forwardslash", "forward-slash":
+            return "/"
+        case "backslash", "back-slash":
+            return "\\"
+        case "grave", "backtick", "backquote":
+            return "`"
+        case "esc":
+            return "escape"
+        case "enter":
+            return "return"
+        case "backspace":
+            return "delete"
+        case "forwarddelete", "fwddelete", "del":
+            return "forward-delete"
+        case "spacebar":
+            return "space"
+        case "leftarrow", "left-arrow", "arrowleft", "arrow-left":
+            return "left"
+        case "rightarrow", "right-arrow", "arrowright", "arrow-right":
+            return "right"
+        case "uparrow", "up-arrow", "arrowup", "arrow-up":
+            return "up"
+        case "downarrow", "down-arrow", "arrowdown", "arrow-down":
+            return "down"
+        case "pgup", "page-up", "page_up":
+            return "pageup"
+        case "pgdn", "pgdown", "page-down", "page_down":
+            return "pagedown"
         default:
             return key
         }
