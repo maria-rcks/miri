@@ -3,7 +3,7 @@
 ## Suggested title
 
 ```text
-Refactor Miri source layout and add app UI/stability improvements
+Idea for animating efficiently and smoother than bruteforcing AX IPCs
 ```
 
 ## Suggested pull request body
@@ -13,136 +13,216 @@ Refactor Miri source layout and add app UI/stability improvements
 
 I do **not** recommend merging this PR as-is.
 
-This branch contains a very large set of changes, including source reorganization, UI additions, packaging, configuration changes, and stability fixes. It will almost certainly create substantial merge conflicts with ongoing work.
+This branch contains a substantial animation/backend experiment plus several focus, visibility, and AX sequencing fixes. It should be treated as a reference implementation and design sketch for a smoother animation path, not as a small ready-to-merge patch.
 
-The intended use of this PR is as a **reference implementation** and as a checklist of stability/UX work that would make Miri more pleasant to use. Individual pieces should be reviewed, split out, and ported selectively instead of merging the branch wholesale.
+The main idea is to avoid brute-forcing macOS Accessibility IPCs every frame. Instead, Miri captures window snapshots, animates those snapshots with Core Animation, and applies real AX window frames only at stable synchronization points.
+
+Discussion / implementation session:
+https://pi.dev/session/#862e24e3d724e5cdac8c7ac792b99c16
+
+More details about the changes in this PR branch are documented in the `docs` folder, especially:
+
+- `docs/animation-revamp-branch-changes.md`
 
 ## Summary
 
-This PR refactors Miri from a large single-coordinator source file into focused domain files and folders, while preserving the existing coordinator-oriented architecture.
+This PR experiments with a snapshot-based animation backend for Miri.
 
-It also includes the feature work from `feature/local`: a menu bar accessory app experience, settings UI, richer configuration, layout/persistence stability fixes, improved input/keybinding support, and macOS packaging.
+The previous AX animation approach tried to move/resize real app windows frame-by-frame through Accessibility APIs. That is inherently janky on macOS: AX writes are IPC-heavy, app-dependent, not atomic across size/position, and not synchronized with WindowServer/compositor frames.
 
-Refactoring session:
-https://pi.dev/session/#b109e38490f0e70c93bca2a02e3b86b4
+This branch adds a compositor-backed snapshot mode:
+
+1. Capture tiled window images.
+2. Show them in a transparent overlay window as `CALayer`s.
+3. Hide the real windows underneath.
+4. Animate the snapshot layers.
+5. Apply final AX frames once.
+6. Reveal the real windows behind the overlay.
+7. Tear down/reset the overlay.
+
+The branch also removes the old selectable `smooth_ax` and `snappy` animation strategies from the public config surface, leaving only:
+
+- `snapshot`
+- `off`
+
+Legacy config values `smooth_ax` and `snappy` are decoded as `snapshot` for compatibility.
+
+## Motivation
+
+The old AX animation strategy was expensive and unreliable because it repeatedly drove app windows through Accessibility APIs:
+
+- high AX IPC volume during every animation frame
+- non-atomic size/position updates
+- app-specific latency and repaint behavior
+- no compositor/vsync synchronization
+- visible flicker when windows enter/leave the viewport
+- bad behavior during rapid keyboard command chains
+
+The snapshot backend is intended to make animations smoother and less battery-heavy by moving most per-frame work into Core Animation.
 
 ## Highlights
 
-- Split the previous large `Miri.swift` implementation into focused `extension Miri` files
-- Organized sources by domain:
-  - `Core`
-  - `Config`
-  - `Input`
-  - `Trackpad`
-  - `Layout`
-  - `Windows`
-  - `Persistence`
-  - `UI`
-  - `Debug`
-  - `System`
-- Added a menu bar status item and workspace bar
-- Added an AppKit settings window for editing config, rules, and keybindings
-- Improved minimize, hide, fullscreen, destroyed-window, transient-window, and persistent-layout behavior
-- Added richer keybinding support, including left/right Option, navigation keys, function keys, and `fn`/Globe handling
-- Added event tap recovery when macOS disables the tap
-- Added macOS app/DMG packaging support
-- Added documentation for the feature branch and refactor
+### Snapshot animation backend
 
-## Detailed changes
+Added:
 
-### Source refactor
+- `Sources/Miri/Layout/MiriSnapshotAnimation.swift`
 
-The previous large Miri coordinator file mixed lifecycle, config, input, window discovery, layout, animation, persistence, status UI, debug logging, and AX observer logic.
+The backend captures tiled windows with `CGWindowListCreateImage` and animates them in a transparent overlay window.
 
-This PR keeps `Miri` as the central coordinator, but moves cohesive behavior into focused files such as:
+Real windows are hidden below the overlay while snapshots animate, then restored after final layout is applied.
 
-- `Sources/Miri/Core/MiriCommands.swift`
-- `Sources/Miri/Core/MiriStatusProvider.swift`
-- `Sources/Miri/Input/MiriEventTap.swift`
-- `Sources/Miri/Input/KeybindingResolver.swift`
-- `Sources/Miri/Layout/MiriLayoutApplication.swift`
-- `Sources/Miri/Layout/MiriLayoutAnimation.swift`
-- `Sources/Miri/Windows/MiriWindowDiscovery.swift`
-- `Sources/Miri/Windows/MiriWindowPlacement.swift`
-- `Sources/Miri/Windows/MiriAXObserver.swift`
-- `Sources/Miri/Persistence/MiriPersistentLayout.swift`
-- `Sources/Miri/Persistence/MiriExitRestoration.swift`
+Snapshot capture uses:
 
-The refactor is documented in:
-
-- `docs/miri-refactoring-summary.md`
-
-### App UI and settings
-
-This branch turns Miri into a more user-facing macOS accessory app:
-
-- starts an accessory `NSApplication`
-- adds a menu bar status item
-- shows active workspace/window state
-- adds menu actions for reload, rescan, settings, config, and quit
-- adds a settings window for general, layout, focus, animation, trackpad, rule, and keybinding configuration
-- adds a configurable workspace bar with app icons and overflow indicators
-
-### Configuration and keybindings
-
-- Default keybindings move from Command-based shortcuts to left Option-based shortcuts
-- Keybinding normalization supports generic/left/right Option variants
-- Added broader support for letters, punctuation, arrows, navigation keys, function keys, and `fn`/Globe
-- Added MacBook `fn` navigation aliases such as `fn+left` matching `home`
-- Added config/settings support for animation throttling and workspace bar options
-
-### Layout, persistence, and window stability
-
-This PR includes stability improvements for:
-
-- minimized windows
-- hidden apps
-- fullscreen transitions
-- destroyed windows
-- Chromium transient and Picture-in-Picture windows
-- persistent layout snapshot matching
-- reduced layout churn and redundant AX operations
-- event tap recovery after macOS disables the tap
-
-It also ports selected main-branch fixes into the refactored source layout, including:
-
-- floating-window stacking via SkyLight window levels
-- animation visibility tracking for windows entering/leaving a layout
-- richer input/keybinding handling
-
-### Packaging
-
-Adds release/local packaging support:
-
-- `.github/workflows/release.yml`
-- `scripts/package-macos.sh`
-- `scripts/package-app.sh`
-
-`package-app.sh` now delegates to `package-macos.sh` while preserving the local development output at:
-
-```text
-dist/Miri.app
+```swift
+[.bestResolution, .boundsIgnoreFraming]
 ```
 
-## Documentation
+so snapshot dimensions better match the real window bounds.
 
-Added/updated docs:
+### Retargetable snapshot sessions
 
-- `docs/feature-local-branch-changes.md`
-- `docs/miri-refactoring-summary.md`
+Rapid keyboard focus commands are handled by retargeting an active snapshot session instead of cancelling and rebuilding animation state every time.
 
-These describe the original feature branch changes, the refactoring, and the manually ported main-branch work.
+During an active snapshot animation, new focus left/right commands:
+
+- keep the overlay/session alive
+- read current presentation-layer frames
+- retarget existing snapshot layers toward the latest layout
+- invalidate stale completion callbacks with generation counters
+- only allow the latest layout request to reveal real windows
+
+This makes command chains feel like one continuous movement rather than a sequence of disconnected animations.
+
+### Active tiled windows are snapshotted together
+
+The backend snapshots active tiled windows as a group, including offscreen/hidden columns, so later retargets can animate windows that were not visible at the beginning of the chain.
+
+This avoids cases where focusing further right/left would have no snapshot for the newly targeted offscreen column.
+
+### Animation strategy simplification
+
+Updated config/settings/docs so animation strategy is now:
+
+```json
+"animation_strategy": "snapshot"
+```
+
+or:
+
+```json
+"animation_strategy": "off"
+```
+
+Removed public `smooth_ax` and `snappy` backend choices.
+
+### Focus sequencing fixes
+
+This branch adds several fixes for rapid focus commands:
+
+- focus request generation tracking
+- keyboard focus authority timeout
+- stale AX focus notification suppression
+- focus command serialization when animation is disabled
+- immediate focus-at-start for snapshot animations only
+
+Snapshot mode focuses the target window at animation start without revealing the real window under the overlay. Non-animated mode keeps the safer behavior: apply final layout first, then focus.
+
+### Stale completion protection
+
+Snapshot completions are guarded by layout/session generations. If a new focus/layout request arrives near the end of an animation, the old completion callback no longer applies stale layout or tears down the current visual state.
+
+This fixes cases where focus changed logically but the visual snapshot state was left stale.
+
+### Workspace and visibility stability
+
+Added:
+
+- `Sources/Miri/Layout/MiriWorkspaceVisibility.swift`
+
+Inactive workspace windows are explicitly hidden/tracked so they do not flicker or participate in active workspace animations.
+
+Snapshot-hidden windows are also tracked and restored defensively on completion/interruption.
+
+### AX frame application improvements
+
+Updated:
+
+- `Sources/Miri/System/Accessibility.swift`
+
+Changes include:
+
+- applying AX frames as size → position → size
+- temporarily disabling `AXEnhancedUserInterface` around managed frame changes
+
+These help reduce resize/move glitches for the unavoidable real AX commits.
+
+### Animation timing support
+
+Added:
+
+- `Sources/Miri/Layout/MiriAnimationTimer.swift`
+
+This provides a `CVDisplayLink`-backed timer with a dispatch timer fallback. The snapshot backend is now the preferred path, but this remains useful infrastructure for animation timing.
+
+## Permission note
+
+Snapshot animations require Screen Recording permission because Miri captures window images for the animation overlay.
+
+The README now documents that Miri may require:
+
+- Accessibility
+- Input Monitoring
+- Screen Recording, for snapshot animations
+
+## Config/UI changes
+
+Updated:
+
+- `README.md`
+- `miri.config.json`
+- `Sources/Miri/UI/Settings/SettingsWindowController.swift`
+
+Defaults now prefer:
+
+```json
+"animation_strategy": "snapshot",
+"animation_fps": 60,
+"animation_pixel_threshold": 0.5
+```
+
+The settings UI strategy dropdown now shows only:
+
+- `snapshot`
+- `off`
+
+## Files added
+
+- `Sources/Miri/Layout/MiriAnimationStrategy.swift`
+- `Sources/Miri/Layout/MiriAnimationTimer.swift`
+- `Sources/Miri/Layout/MiriSnapshotAnimation.swift`
+- `Sources/Miri/Layout/MiriWorkspaceVisibility.swift`
+- `docs/animation-revamp-branch-changes.md`
 
 ## Validation
 
 Tested locally:
 
 - [x] `swift build`
-- [x] `scripts/package-app.sh`
 
-## Notes for reviewers
+## Notes / risks
 
-Selected main-branch changes were hand-ported instead of cherry-picked because this branch significantly reorganizes the source tree.
+This is still experimental.
 
-The source refactor is mostly structural: behavior was kept in `extension Miri` files to preserve the existing coordinator model while making the code easier to navigate and review by domain.
+Known areas that deserve extra review/testing:
+
+- Screen Recording permission flow and failure behavior
+- multi-monitor behavior
+- fullscreen/native Spaces edge cases
+- windows that cannot be captured by `CGWindowListCreateImage`
+- interaction with apps that repaint or reorder windows aggressively on focus
+- AppKit overlay lifetime and cleanup
+- rapid command chains across many offscreen columns
+
+The intended value of this branch is the architectural direction: avoid per-frame AX IPCs and use snapshots/Core Animation for visual motion.
 ```
