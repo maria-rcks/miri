@@ -617,7 +617,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return false
         }
 
-        let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])
+        let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn])
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let keyText = keyboardText(from: event)
@@ -886,153 +886,182 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             add(keyText)
         }
 
-        switch keyCode {
-        case KeyCode.one: add("1")
-        case KeyCode.two: add("2")
-        case KeyCode.three: add("3")
-        case KeyCode.four: add("4")
-        case KeyCode.five: add("5")
-        case KeyCode.six: add("6")
-        case KeyCode.seven: add("7")
-        case KeyCode.eight: add("8")
-        case KeyCode.nine: add("9")
-        case KeyCode.zero: add("0")
-        case KeyCode.a: add("a")
-        case KeyCode.b: add("b")
-        case KeyCode.c: add("c")
-        case KeyCode.d: add("d")
-        case KeyCode.e: add("e")
-        case KeyCode.f: add("f")
-        case KeyCode.g: add("g")
-        case KeyCode.h: add("h")
-        case KeyCode.i: add("i")
-        case KeyCode.j: add("j")
-        case KeyCode.k: add("k")
-        case KeyCode.l: add("l")
-        case KeyCode.m: add("m")
-        case KeyCode.n: add("n")
-        case KeyCode.o: add("o")
-        case KeyCode.p: add("p")
-        case KeyCode.q: add("q")
-        case KeyCode.r: add("r")
-        case KeyCode.s: add("s")
-        case KeyCode.t: add("t")
-        case KeyCode.u: add("u")
-        case KeyCode.v: add("v")
-        case KeyCode.w: add("w")
-        case KeyCode.x: add("x")
-        case KeyCode.y: add("y")
-        case KeyCode.z: add("z")
-        case KeyCode.minus:
-            add("-")
-            add("minus")
-        case KeyCode.equal:
-            add("=")
-            add("equal")
-        case KeyCode.leftBracket:
-            add("[")
-            add("{")
-        case KeyCode.rightBracket:
-            add("]")
-            add("}")
-        case KeyCode.semicolon: add(";")
-        case KeyCode.quote: add("'")
-        case KeyCode.comma: add(",")
-        case KeyCode.period: add(".")
-        case KeyCode.slash: add("/")
-        case KeyCode.backslash: add("\\")
-        case KeyCode.grave: add("`")
-        case KeyCode.tab: add("tab")
-        case KeyCode.space: add("space")
-        case KeyCode.returnKey:
-            add("return")
-            add("enter")
-        case KeyCode.escape: add("escape")
-        case KeyCode.delete:
-            add("delete")
-            add("backspace")
-        case KeyCode.forwardDelete: add("forward-delete")
-        case KeyCode.home: add("home")
-        case KeyCode.end: add("end")
-        case KeyCode.pageUp: add("pageup")
-        case KeyCode.pageDown: add("pagedown")
-        case KeyCode.leftArrow: add("left")
-        case KeyCode.rightArrow: add("right")
-        case KeyCode.upArrow: add("up")
-        case KeyCode.downArrow: add("down")
-        case KeyCode.f1: add("f1")
-        case KeyCode.f2: add("f2")
-        case KeyCode.f3: add("f3")
-        case KeyCode.f4: add("f4")
-        case KeyCode.f5: add("f5")
-        case KeyCode.f6: add("f6")
-        case KeyCode.f7: add("f7")
-        case KeyCode.f8: add("f8")
-        case KeyCode.f9: add("f9")
-        case KeyCode.f10: add("f10")
-        case KeyCode.f11: add("f11")
-        case KeyCode.f12: add("f12")
-        default:
-            break
+        for name in Self.keyNamesByCode[keyCode] ?? [] {
+            add(name)
         }
 
         return names
     }
 
     private func normalizedKeyName(_ key: String) -> String {
-        switch key.lowercased() {
-        case "leftbracket", "left-bracket", "openbracket", "open-bracket":
-            return "["
-        case "rightbracket", "right-bracket", "closebracket", "close-bracket":
-            return "]"
-        case "leftbrace", "left-brace", "openbrace", "open-brace":
-            return "{"
-        case "rightbrace", "right-brace", "closebrace", "close-brace":
-            return "}"
-        case "minus", "hyphen", "dash":
-            return "-"
-        case "equal", "equals":
-            return "="
-        case "semicolon":
-            return ";"
-        case "quote", "apostrophe", "singlequote", "single-quote":
-            return "'"
-        case "comma":
-            return ","
-        case "period", "dot", "fullstop", "full-stop":
-            return "."
-        case "slash", "forwardslash", "forward-slash":
-            return "/"
-        case "backslash", "back-slash":
-            return "\\"
-        case "grave", "backtick", "backquote":
-            return "`"
-        case "esc":
-            return "escape"
-        case "enter":
-            return "return"
-        case "backspace":
-            return "delete"
-        case "forwarddelete", "fwddelete", "del":
-            return "forward-delete"
-        case "spacebar":
-            return "space"
-        case "leftarrow", "left-arrow", "arrowleft", "arrow-left":
-            return "left"
-        case "rightarrow", "right-arrow", "arrowright", "arrow-right":
-            return "right"
-        case "uparrow", "up-arrow", "arrowup", "arrow-up":
-            return "up"
-        case "downarrow", "down-arrow", "arrowdown", "arrow-down":
-            return "down"
-        case "pgup", "page-up", "page_up":
-            return "pageup"
-        case "pgdn", "pgdown", "page-down", "page_down":
-            return "pagedown"
-        default:
-            return key
-        }
+        Self.keyNameAliases[key.lowercased()] ?? key
     }
+
+    private static let keyNamesByCode: [Int64: [String]] = [
+        // ANSI letter keys.
+        KeyCode.a: ["a"],
+        KeyCode.b: ["b"],
+        KeyCode.c: ["c"],
+        KeyCode.d: ["d"],
+        KeyCode.e: ["e"],
+        KeyCode.f: ["f"],
+        KeyCode.g: ["g"],
+        KeyCode.h: ["h"],
+        KeyCode.i: ["i"],
+        KeyCode.j: ["j"],
+        KeyCode.k: ["k"],
+        KeyCode.l: ["l"],
+        KeyCode.m: ["m"],
+        KeyCode.n: ["n"],
+        KeyCode.o: ["o"],
+        KeyCode.p: ["p"],
+        KeyCode.q: ["q"],
+        KeyCode.r: ["r"],
+        KeyCode.s: ["s"],
+        KeyCode.t: ["t"],
+        KeyCode.u: ["u"],
+        KeyCode.v: ["v"],
+        KeyCode.w: ["w"],
+        KeyCode.x: ["x"],
+        KeyCode.y: ["y"],
+        KeyCode.z: ["z"],
+
+        // ANSI number row.
+        KeyCode.one: ["1"],
+        KeyCode.two: ["2"],
+        KeyCode.three: ["3"],
+        KeyCode.four: ["4"],
+        KeyCode.five: ["5"],
+        KeyCode.six: ["6"],
+        KeyCode.seven: ["7"],
+        KeyCode.eight: ["8"],
+        KeyCode.nine: ["9"],
+        KeyCode.zero: ["0"],
+
+        // ANSI punctuation and symbols.
+        KeyCode.minus: ["-", "minus"],
+        KeyCode.equal: ["=", "equal"],
+        KeyCode.leftBracket: ["[", "{"],
+        KeyCode.rightBracket: ["]", "}"],
+        KeyCode.semicolon: [";"],
+        KeyCode.quote: ["'"],
+        KeyCode.comma: [","],
+        KeyCode.period: ["."],
+        KeyCode.slash: ["/"],
+        KeyCode.backslash: ["\\"],
+        KeyCode.grave: ["`"],
+
+        // Editing and whitespace keys.
+        KeyCode.tab: ["tab"],
+        KeyCode.space: ["space"],
+        KeyCode.returnKey: ["return", "enter"],
+        KeyCode.escape: ["escape"],
+        KeyCode.delete: ["delete", "backspace"],
+        KeyCode.forwardDelete: ["forward-delete"],
+
+        // Navigation keys.
+        KeyCode.home: ["home"],
+        KeyCode.end: ["end"],
+        KeyCode.pageUp: ["pageup"],
+        KeyCode.pageDown: ["pagedown"],
+        KeyCode.leftArrow: ["left"],
+        KeyCode.rightArrow: ["right"],
+        KeyCode.upArrow: ["up"],
+        KeyCode.downArrow: ["down"],
+
+        // Function keys.
+        KeyCode.f1: ["f1"],
+        KeyCode.f2: ["f2"],
+        KeyCode.f3: ["f3"],
+        KeyCode.f4: ["f4"],
+        KeyCode.f5: ["f5"],
+        KeyCode.f6: ["f6"],
+        KeyCode.f7: ["f7"],
+        KeyCode.f8: ["f8"],
+        KeyCode.f9: ["f9"],
+        KeyCode.f10: ["f10"],
+        KeyCode.f11: ["f11"],
+        KeyCode.f12: ["f12"],
+    ]
+
+    private static let keyNameAliases: [String: String] = [
+        // Brackets and braces.
+        "leftbracket": "[",
+        "left-bracket": "[",
+        "openbracket": "[",
+        "open-bracket": "[",
+        "rightbracket": "]",
+        "right-bracket": "]",
+        "closebracket": "]",
+        "close-bracket": "]",
+        "leftbrace": "{",
+        "left-brace": "{",
+        "openbrace": "{",
+        "open-brace": "{",
+        "rightbrace": "}",
+        "right-brace": "}",
+        "closebrace": "}",
+        "close-brace": "}",
+
+        // Punctuation and symbols.
+        "minus": "-",
+        "hyphen": "-",
+        "dash": "-",
+        "equal": "=",
+        "equals": "=",
+        "semicolon": ";",
+        "quote": "'",
+        "apostrophe": "'",
+        "singlequote": "'",
+        "single-quote": "'",
+        "comma": ",",
+        "period": ".",
+        "dot": ".",
+        "fullstop": ".",
+        "full-stop": ".",
+        "slash": "/",
+        "forwardslash": "/",
+        "forward-slash": "/",
+        "backslash": "\\",
+        "back-slash": "\\",
+        "grave": "`",
+        "backtick": "`",
+        "backquote": "`",
+
+        // Editing and whitespace keys.
+        "esc": "escape",
+        "enter": "return",
+        "backspace": "delete",
+        "forwarddelete": "forward-delete",
+        "fwddelete": "forward-delete",
+        "del": "forward-delete",
+        "spacebar": "space",
+
+        // Navigation keys.
+        "leftarrow": "left",
+        "left-arrow": "left",
+        "arrowleft": "left",
+        "arrow-left": "left",
+        "rightarrow": "right",
+        "right-arrow": "right",
+        "arrowright": "right",
+        "arrow-right": "right",
+        "uparrow": "up",
+        "up-arrow": "up",
+        "arrowup": "up",
+        "arrow-up": "up",
+        "downarrow": "down",
+        "down-arrow": "down",
+        "arrowdown": "down",
+        "arrow-down": "down",
+        "pgup": "pageup",
+        "page-up": "pageup",
+        "page_up": "pageup",
+        "pgdn": "pagedown",
+        "pgdown": "pagedown",
+        "page-down": "pagedown",
+        "page_down": "pagedown",
+    ]
 
     fileprivate func handleMouseMoved(_ event: CGEvent) {
         guard hoverFocusEnabled,
