@@ -1451,7 +1451,10 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return
         }
 
-        let requestedIndex = min(max(oneBasedIndex - 1, 0), workspaces.count - 1)
+        let requestedIndex = max(oneBasedIndex - 1, 0)
+        while workspaces.count <= requestedIndex {
+            workspaces.append(Workspace())
+        }
         let targetIndex = workspaceAutoBackAndForth && requestedIndex == activeWorkspace
             ? previousWorkspaceIndex() ?? requestedIndex
             : requestedIndex
@@ -1485,11 +1488,27 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return false
         }
 
-        let currentWorkspace = activeWorkspaceObject()
+        let leavingWorkspace = activeWorkspaceObject()
         activeWorkspace = targetIndex
         if rememberPrevious {
-            previousWorkspace = currentWorkspace
+            previousWorkspace = leavingWorkspace
         }
+
+        if let leavingWorkspace,
+           leavingWorkspace.isEmpty,
+           workspaces.count > 1,
+           let removalIndex = workspaces.firstIndex(where: { $0 === leavingWorkspace }),
+           removalIndex != activeWorkspace
+        {
+            workspaces.remove(at: removalIndex)
+            if activeWorkspace > removalIndex {
+                activeWorkspace -= 1
+            }
+            if previousWorkspace === leavingWorkspace {
+                previousWorkspace = nil
+            }
+        }
+
         return true
     }
 
@@ -1710,7 +1729,10 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         }
 
         sourceWorkspace.clampFocus()
-        let targetIndex = min(max(requestedIndex, 0), workspaces.count - 1)
+        let targetIndex = max(requestedIndex, 0)
+        while workspaces.count <= targetIndex {
+            workspaces.append(Workspace())
+        }
         guard targetIndex != activeWorkspace else {
             return false
         }
@@ -2030,20 +2052,14 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             workspaces.append(Workspace())
         }
 
-        if workspaces.count > 1 {
-            var index = workspaces.count - 2
-            while index >= 0 {
-                if index != activeWorkspace && workspaces[index].isEmpty {
-                    workspaces.remove(at: index)
-                    if activeWorkspace > index {
-                        activeWorkspace -= 1
-                    }
-                }
-                if index == 0 {
-                    break
-                }
-                index -= 1
+        let lastNonEmpty = workspaces.lastIndex(where: { !$0.isEmpty }) ?? -1
+        let desiredCount = max(lastNonEmpty + 2, activeWorkspace + 1)
+        while workspaces.count > desiredCount {
+            let removeIndex = workspaces.count - 1
+            if removeIndex == activeWorkspace {
+                break
             }
+            workspaces.remove(at: removeIndex)
         }
 
         activeWorkspace = min(max(activeWorkspace, 0), workspaces.count - 1)
