@@ -31,7 +31,7 @@ extension Miri {
             return .smoothAX
         case .snappy:
             return .snappy
-        case .off:
+        case .snapshot, .off:
             return nil
         }
     }

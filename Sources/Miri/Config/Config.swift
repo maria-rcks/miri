@@ -31,6 +31,7 @@ enum AnimationCurve: String, Codable {
 }
 
 enum AnimationStrategy: String, Codable {
+    case snapshot
     case smoothAX = "smooth_ax"
     case snappy
     case off
@@ -122,7 +123,7 @@ struct MiriConfig: Codable {
         moveColumnAnimationMS: 240,
         widthAnimationMS: 280,
         animationCurve: .smooth,
-        animationStrategy: .snappy,
+        animationStrategy: .snapshot,
         animationFPS: 60,
         animationPixelThreshold: 0.5,
         hoverToFocus: true,

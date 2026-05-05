@@ -585,6 +585,6 @@ extension FocusAlignment { static let allCasesStrings = ["left", "center", "smar
 extension NewWindowPosition { static let allCasesStrings = ["before_active", "after_active", "end"] }
 extension HoverFocusMode { static let allCasesStrings = ["off", "visible_only", "edge_or_visible"] }
 extension AnimationCurve { static let allCasesStrings = ["smooth", "snappy", "linear"] }
-extension AnimationStrategy { static let allCasesStrings = ["smooth_ax", "snappy", "off"] }
+extension AnimationStrategy { static let allCasesStrings = ["snapshot", "smooth_ax", "snappy", "off"] }
 extension TrackpadNavigationSnap { static let allCasesStrings = ["nearest_column", "nearest_visible", "none"] }
 extension WorkspaceBarOverflowStyle { static let allCasesStrings = ["plus_count", "dots_count", "chevron", "none"] }

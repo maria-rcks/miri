@@ -30,6 +30,9 @@ final class Miri: NSObject, @unchecked Sendable {
     var debugLoggedWindowSignatures = Set<String>()
     var isApplyingLayout = false
     var animationTimer: AnimationTimer?
+    var snapshotAnimationSession: SnapshotAnimationSession?
+    var snapshotOverlayWindow: SnapshotOverlayWindow?
+    var snapshotHiddenWindows: [ManagedWindow] = []
     var hoverFocusTimer: DispatchSourceTimer?
     var hoverFocusTarget: ObjectIdentifier?
     var hoverFocusRequiresRearm = false

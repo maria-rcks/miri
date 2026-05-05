@@ -108,7 +108,7 @@ The repo includes a full default config. A compact version looks like this:
   "move_column_animation_ms": 240,
   "width_animation_ms": 280,
   "animation_curve": "smooth",
-  "animation_strategy": "snappy",
+  "animation_strategy": "snapshot",
   "hover_to_focus": true,
   "hover_focus_delay_ms": 120,
   "hover_focus_max_scroll_ratio": 0.15,
@@ -165,7 +165,7 @@ binding. See `miri.config.json` for the full command-name list.
 Useful string settings:
 
 - `animation_curve`: `smooth`, `snappy`, or `linear`
-- `animation_strategy`: `snappy`, `smooth_ax`, or `off`
+- `animation_strategy`: `snapshot`, `snappy`, `smooth_ax`, or `off`
 - `hover_focus_mode`: `off`, `visible_only`, or `edge_or_visible`
 - `focus_alignment`: `left`, `center`, or `smart`
 - `new_window_position` and rule `open_position`: `before_active`,

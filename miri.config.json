@@ -8,7 +8,7 @@
   "move_column_animation_ms": 0,
   "width_animation_ms": 0,
   "animation_curve": "smooth",
-  "animation_strategy": "snappy",
+  "animation_strategy": "snapshot",
   "animation_fps": 60,
   "animation_pixel_threshold": 0.5,
   "hover_to_focus": true,

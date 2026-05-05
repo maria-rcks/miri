@@ -12,6 +12,19 @@ extension Miri {
         animatedWindowIDs: Set<ObjectIdentifier>?,
         resizingWindowID: ObjectIdentifier?
     ) {
+        if animationStrategy == .snapshot {
+            animateLayoutWithSnapshots(
+                from: previousState,
+                to: targetState,
+                viewport: viewport,
+                focusActiveWindow: focusActiveWindow,
+                duration: duration,
+                animatedWindowIDs: animatedWindowIDs,
+                resizingWindowID: resizingWindowID
+            )
+            return
+        }
+
         guard let profile = animationProfile else {
             let finalLayout = layoutItems(viewport: viewport, state: targetState, parkHidden: true)
             applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
@@ -179,6 +192,10 @@ extension Miri {
     func stopAnimation(clearPresentation: Bool) {
         animationTimer?.cancel()
         animationTimer = nil
+        snapshotAnimationSession?.cancel()
+        snapshotAnimationSession = nil
+        restoreSnapshotHiddenWindows()
+        snapshotOverlayWindow?.hideAndReset()
         if clearPresentation {
             presentationFrames.removeAll()
         }

@@ -143,13 +143,12 @@ extension Miri {
 
         let newState = captureLayoutState()
         let newFocusedWindowID = activeWindow().map(ObjectIdentifier.init)
-        let animatedWindowIDs = Set([previousFocusedWindowID, newFocusedWindowID].compactMap { $0 })
         projectLayout(
             focusActiveWindow: true,
             animated: animated && (previousState != newState || frameAnimated),
             from: previousState,
             animationDuration: duration,
-            animatedWindowIDs: animatedWindowIDs,
+            animatedWindowIDs: nil,
             resizingWindowID: newFocusedWindowID
         )
     }
