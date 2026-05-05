@@ -32,9 +32,19 @@ enum AnimationCurve: String, Codable {
 
 enum AnimationStrategy: String, Codable {
     case snapshot
-    case smoothAX = "smooth_ax"
-    case snappy
     case off
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        switch value {
+        case "off":
+            self = .off
+        case "snapshot", "smooth_ax", "snappy":
+            self = .snapshot
+        default:
+            self = .snapshot
+        }
+    }
 }
 
 enum HoverFocusMode: String, Codable {

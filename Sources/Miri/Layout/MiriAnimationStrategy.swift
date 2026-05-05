@@ -26,14 +26,7 @@ struct AnimationProfile {
 
 extension Miri {
     var animationProfile: AnimationProfile? {
-        switch animationStrategy {
-        case .smoothAX:
-            return .smoothAX
-        case .snappy:
-            return .snappy
-        case .snapshot, .off:
-            return nil
-        }
+        nil
     }
 
     func animationDuration(_ duration: TimeInterval, using profile: AnimationProfile) -> TimeInterval {

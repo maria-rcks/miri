@@ -165,7 +165,7 @@ binding. See `miri.config.json` for the full command-name list.
 Useful string settings:
 
 - `animation_curve`: `smooth`, `snappy`, or `linear`
-- `animation_strategy`: `snapshot`, `snappy`, `smooth_ax`, or `off`
+- `animation_strategy`: `snapshot` or `off`
 - `hover_focus_mode`: `off`, `visible_only`, or `edge_or_visible`
 - `focus_alignment`: `left`, `center`, or `smart`
 - `new_window_position` and rule `open_position`: `before_active`,

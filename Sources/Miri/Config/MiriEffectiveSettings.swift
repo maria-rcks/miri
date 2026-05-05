@@ -50,7 +50,7 @@ extension Miri {
     }
 
     var animationStrategy: AnimationStrategy {
-        config.animationStrategy ?? MiriConfig.fallback.animationStrategy ?? .snappy
+        config.animationStrategy ?? MiriConfig.fallback.animationStrategy ?? .snapshot
     }
 
     var animationFPS: Int {

@@ -12,119 +12,24 @@ extension Miri {
         animatedWindowIDs: Set<ObjectIdentifier>?,
         resizingWindowID: ObjectIdentifier?
     ) {
-        if animationStrategy == .snapshot {
-            animateLayoutWithSnapshots(
-                from: previousState,
-                to: targetState,
-                viewport: viewport,
-                focusActiveWindow: focusActiveWindow,
-                duration: duration,
-                animatedWindowIDs: animatedWindowIDs,
-                resizingWindowID: resizingWindowID
-            )
-            return
-        }
-
-        guard let profile = animationProfile else {
+        guard animationStrategy == .snapshot else {
+            stopAnimation(clearPresentation: true)
             let finalLayout = layoutItems(viewport: viewport, state: targetState, parkHidden: true)
             applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
             restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
-            presentationFrames.removeAll()
             releaseLayoutLock()
             return
         }
 
-        let duration = animationDuration(duration, using: profile)
-        guard duration > 0 else {
-            let finalLayout = layoutItems(viewport: viewport, state: targetState, parkHidden: true)
-            applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
-            restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
-            presentationFrames.removeAll()
-            releaseLayoutLock()
-            return
-        }
-
-        stopAnimation(clearPresentation: false)
-        isApplyingLayout = true
-
-        let startLayout = layoutItems(viewport: viewport, state: previousState, parkHidden: false)
-        let targetProjectedLayout = layoutItems(viewport: viewport, state: targetState, parkHidden: false)
-        let finalLayout = layoutItems(viewport: viewport, state: targetState, parkHidden: true)
-        let startByWindow = layoutByWindow(startLayout)
-        let targetByWindow = layoutByWindow(targetProjectedLayout)
-        let targetWorkspaceWindowIDs = workspaceWindowIDs(workspaceIndex: targetState.activeWorkspace)
-        let windowIDs = Set(startByWindow.keys).union(targetByWindow.keys).intersection(targetWorkspaceWindowIDs)
-
-        let motions = windowIDs.compactMap { id -> WindowMotion? in
-            guard let window = startByWindow[id]?.window ?? targetByWindow[id]?.window else {
-                return nil
-            }
-            let startFrame = presentationFrames[id] ?? startByWindow[id]?.frame ?? targetByWindow[id]?.frame
-            let endFrame = targetByWindow[id]?.frame ?? startFrame
-            guard let startFrame, let endFrame else {
-                return nil
-            }
-            let isAnimationCandidate = animatedWindowIDs?.contains(id) ?? true
-            let participates = isAnimationCandidate && startFrame.union(endFrame).intersects(viewport)
-            let sizeStable = resizingWindowID != id || (abs(startFrame.width - endFrame.width) < 0.5
-                && abs(startFrame.height - endFrame.height) < 0.5)
-            return WindowMotion(
-                window: window,
-                startFrame: startFrame,
-                endFrame: endFrame,
-                startsVisible: startByWindow[id]?.visible ?? false,
-                endsVisible: targetByWindow[id]?.visible ?? false,
-                participates: participates,
-                sizeStable: sizeStable
-            )
-        }
-
-        guard !motions.isEmpty else {
-            applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
-            restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
-            presentationFrames.removeAll()
-            releaseLayoutLock()
-            return
-        }
-
-        for motion in motions {
-            setWindowAlpha(motion.participates && motion.startsVisible ? 1 : 0, for: motion.window.windowID)
-            if motion.participates {
-                prepareAnimationMotion(motion, profile: profile)
-            } else {
-                setAXFrame(motion.endFrame, for: motion.window)
-            }
-        }
-
-        let startedAt = CFAbsoluteTimeGetCurrent()
-        animationTimer = AnimationTimer(preferredFPS: animationFPS) { [weak self] in
-            guard let self else {
-                return
-            }
-
-            let now = CFAbsoluteTimeGetCurrent()
-            let elapsed = now - startedAt
-            let linearProgress = min(max(elapsed / duration, 0), 1)
-            let easedProgress = softSettleCurve(CGFloat(linearProgress))
-            let isFinalFrame = linearProgress >= 1
-            applyAnimationFrame(
-                motions,
-                progress: easedProgress,
-                viewport: viewport,
-                pixelThreshold: animationPixelThreshold(using: profile),
-                profile: profile
-            )
-            restoreFloatingVisibility()
-
-            if isFinalFrame {
-                animationTimer?.cancel()
-                animationTimer = nil
-                applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
-                restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
-                presentationFrames.removeAll()
-                releaseLayoutLock()
-            }
-        }
+        animateLayoutWithSnapshots(
+            from: previousState,
+            to: targetState,
+            viewport: viewport,
+            focusActiveWindow: focusActiveWindow,
+            duration: duration,
+            animatedWindowIDs: animatedWindowIDs,
+            resizingWindowID: resizingWindowID
+        )
     }
 
     func layoutByWindow(_ layout: [LayoutItem]) -> [ObjectIdentifier: LayoutItem] {

@@ -170,7 +170,7 @@ final class SettingsWindowController: NSWindowController, NSTableViewDataSource,
         ("Trackpad settle animation ms", intField("trackpadSettleAnimationMS", draft.trackpadSettleAnimationMS ?? 0)),
         ("Move column animation ms", intField("moveColumnAnimationMS", draft.moveColumnAnimationMS ?? 0)),
         ("Width animation ms", intField("widthAnimationMS", draft.widthAnimationMS ?? 0)),
-        ("Strategy", popup("animationStrategy", AnimationStrategy.allCasesStrings, draft.animationStrategy?.rawValue ?? MiriConfig.fallback.animationStrategy?.rawValue ?? "snappy")),
+        ("Strategy", popup("animationStrategy", AnimationStrategy.allCasesStrings, draft.animationStrategy?.rawValue ?? MiriConfig.fallback.animationStrategy?.rawValue ?? "snapshot")),
         ("Animation FPS", intField("animationFPS", draft.animationFPS ?? 60)),
         ("Pixel threshold", doubleField("animationPixelThreshold", Double(draft.animationPixelThreshold ?? 0.5))),
         ("Curve", popup("animationCurve", AnimationCurve.allCasesStrings, draft.animationCurve?.rawValue ?? "smooth")),
@@ -585,6 +585,6 @@ extension FocusAlignment { static let allCasesStrings = ["left", "center", "smar
 extension NewWindowPosition { static let allCasesStrings = ["before_active", "after_active", "end"] }
 extension HoverFocusMode { static let allCasesStrings = ["off", "visible_only", "edge_or_visible"] }
 extension AnimationCurve { static let allCasesStrings = ["smooth", "snappy", "linear"] }
-extension AnimationStrategy { static let allCasesStrings = ["snapshot", "smooth_ax", "snappy", "off"] }
+extension AnimationStrategy { static let allCasesStrings = ["snapshot", "off"] }
 extension TrackpadNavigationSnap { static let allCasesStrings = ["nearest_column", "nearest_visible", "none"] }
 extension WorkspaceBarOverflowStyle { static let allCasesStrings = ["plus_count", "dots_count", "chevron", "none"] }
