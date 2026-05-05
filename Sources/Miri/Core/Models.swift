@@ -43,6 +43,7 @@ final class Workspace {
 
 struct RestoreSnapshot: Codable {
     var windowIDs: [UInt32]
+    var floatingWindowIDs: [UInt32]?
     var viewport: RectSnapshot
 }
 
@@ -103,6 +104,8 @@ struct WindowMotion {
     var window: ManagedWindow
     var startFrame: CGRect
     var endFrame: CGRect
+    var startsVisible: Bool
+    var endsVisible: Bool
     var participates: Bool
     var sizeStable: Bool
 }

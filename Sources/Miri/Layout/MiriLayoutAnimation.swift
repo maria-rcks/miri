@@ -39,6 +39,8 @@ extension Miri {
                 window: window,
                 startFrame: startFrame,
                 endFrame: endFrame,
+                startsVisible: startByWindow[id]?.visible ?? false,
+                endsVisible: targetByWindow[id]?.visible ?? false,
                 participates: participates,
                 sizeStable: sizeStable
             )
@@ -46,16 +48,14 @@ extension Miri {
 
         guard !motions.isEmpty else {
             applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
-            restoreFloatingVisibility()
+            restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
             presentationFrames.removeAll()
             releaseLayoutLock()
             return
         }
 
-        let finalVisibleWindowIDs = Set(finalLayout.filter(\.visible).map { ObjectIdentifier($0.window) })
         for motion in motions {
-            let id = ObjectIdentifier(motion.window)
-            setWindowAlpha((motion.participates || finalVisibleWindowIDs.contains(id)) ? 1 : 0, for: motion.window.windowID)
+            setWindowAlpha(motion.participates && motion.startsVisible ? 1 : 0, for: motion.window.windowID)
             if !motion.participates {
                 setAXFrame(motion.endFrame, for: motion.window.element)
             }
@@ -87,7 +87,7 @@ extension Miri {
                 animationTimer?.cancel()
                 animationTimer = nil
                 applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
-                restoreFloatingVisibility()
+                restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
                 presentationFrames.removeAll()
                 releaseLayoutLock()
             }
@@ -124,6 +124,7 @@ extension Miri {
             }
 
             nextPresentationFrames[id] = frame
+            applyAnimationVisibility(for: motion, progress: progress)
             if motion.sizeStable {
                 setAXPosition(frame.origin, for: motion.window.element)
             } else {
@@ -132,6 +133,20 @@ extension Miri {
         }
 
         presentationFrames = nextPresentationFrames
+    }
+
+    func applyAnimationVisibility(for motion: WindowMotion, progress: CGFloat) {
+        guard motion.participates else {
+            return
+        }
+
+        if motion.startsVisible {
+            setWindowAlpha(1, for: motion.window.windowID)
+            return
+        }
+
+        let shouldReveal = motion.endsVisible && progress >= 0.08
+        setWindowAlpha(shouldReveal ? 1 : 0, for: motion.window.windowID)
     }
 
     func frameDelta(from oldFrame: CGRect, to newFrame: CGRect) -> CGFloat {

@@ -7,10 +7,12 @@ final class SkyLight: @unchecked Sendable {
 
     private typealias SLSMainConnectionID = @convention(c) () -> Int32
     private typealias SLSSetWindowAlpha = @convention(c) (Int32, UInt32, Float) -> Int32
+    private typealias SLSSetWindowLevel = @convention(c) (Int32, UInt32, Int32) -> Int32
     private typealias AXUIElementGetWindow = @convention(c) (AXUIElement, UnsafeMutablePointer<UInt32>) -> Int32
 
     private let connectionID: Int32?
     private let setWindowAlpha: SLSSetWindowAlpha?
+    private let setWindowLevel: SLSSetWindowLevel?
     private let axUIElementGetWindow: AXUIElementGetWindow?
 
     private init() {
@@ -26,6 +28,9 @@ final class SkyLight: @unchecked Sendable {
         setWindowAlpha = skyLightHandle
             .flatMap { dlsym($0, "SLSSetWindowAlpha") }
             .map { unsafeBitCast($0, to: SLSSetWindowAlpha.self) }
+        setWindowLevel = skyLightHandle
+            .flatMap { dlsym($0, "SLSSetWindowLevel") }
+            .map { unsafeBitCast($0, to: SLSSetWindowLevel.self) }
         axUIElementGetWindow = hiServicesHandle
             .flatMap { dlsym($0, "_AXUIElementGetWindow") }
             .map { unsafeBitCast($0, to: AXUIElementGetWindow.self) }
@@ -34,6 +39,10 @@ final class SkyLight: @unchecked Sendable {
 
     var canSetAlpha: Bool {
         connectionID != nil && setWindowAlpha != nil
+    }
+
+    var canSetWindowLevel: Bool {
+        connectionID != nil && setWindowLevel != nil
     }
 
     func windowID(for element: AXUIElement) -> UInt32? {
@@ -51,5 +60,13 @@ final class SkyLight: @unchecked Sendable {
             return
         }
         _ = setWindowAlpha(connectionID, windowID, alpha)
+    }
+
+    @discardableResult
+    func setLevel(_ level: Int32, for windowID: UInt32?) -> Bool {
+        guard let connectionID, let setWindowLevel, let windowID else {
+            return false
+        }
+        return setWindowLevel(connectionID, windowID, level) == 0
     }
 }

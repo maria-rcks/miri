@@ -99,6 +99,8 @@ struct KeybindingResolver {
                 modifiers.insert("lalt")
             case "ralt", "rightalt", "right_alt", "rightoption", "right_option", "right-option":
                 modifiers.insert("ralt")
+            case "fn", "function", "globe":
+                modifiers.insert("fn")
             default:
                 key = normalizedKeyName(part)
             }
@@ -120,50 +122,28 @@ struct KeybindingResolver {
         }
 
         switch name {
-        case "focus_previous_workspace":
-            return .focusPreviousWorkspace
-        case "workspace_down":
-            return .workspaceDown
-        case "workspace_up":
-            return .workspaceUp
-        case "column_left":
-            return .columnLeft
-        case "column_right":
-            return .columnRight
-        case "column_first":
-            return .columnFirst
-        case "column_last":
-            return .columnLast
-        case "move_column_left":
-            return .moveColumnLeft
-        case "move_column_right":
-            return .moveColumnRight
-        case "move_column_to_first":
-            return .moveColumnToFirst
-        case "move_column_to_last":
-            return .moveColumnToLast
-        case "move_column_down":
-            return .moveColumnToWorkspaceDown
-        case "move_column_up":
-            return .moveColumnToWorkspaceUp
-        case "cycle_width_preset_backward":
-            return .cycleWidthPresetBackward
-        case "cycle_width_preset_forward":
-            return .cycleWidthPresetForward
-        case "nudge_width_narrower":
-            return .nudgeWidthNarrower
-        case "nudge_width_wider":
-            return .nudgeWidthWider
-        case "cycle_all_width_presets_backward":
-            return .cycleAllWidthPresetsBackward
-        case "cycle_all_width_presets_forward":
-            return .cycleAllWidthPresetsForward
-        case "nudge_all_widths_narrower":
-            return .nudgeAllWidthsNarrower
-        case "nudge_all_widths_wider":
-            return .nudgeAllWidthsWider
-        default:
-            return nil
+        case "focus_previous_workspace": return .focusPreviousWorkspace
+        case "workspace_down": return .workspaceDown
+        case "workspace_up": return .workspaceUp
+        case "column_left": return .columnLeft
+        case "column_right": return .columnRight
+        case "column_first": return .columnFirst
+        case "column_last": return .columnLast
+        case "move_column_left": return .moveColumnLeft
+        case "move_column_right": return .moveColumnRight
+        case "move_column_to_first": return .moveColumnToFirst
+        case "move_column_to_last": return .moveColumnToLast
+        case "move_column_down": return .moveColumnToWorkspaceDown
+        case "move_column_up": return .moveColumnToWorkspaceUp
+        case "cycle_width_preset_backward": return .cycleWidthPresetBackward
+        case "cycle_width_preset_forward": return .cycleWidthPresetForward
+        case "nudge_width_narrower": return .nudgeWidthNarrower
+        case "nudge_width_wider": return .nudgeWidthWider
+        case "cycle_all_width_presets_backward": return .cycleAllWidthPresetsBackward
+        case "cycle_all_width_presets_forward": return .cycleAllWidthPresetsForward
+        case "nudge_all_widths_narrower": return .nudgeAllWidthsNarrower
+        case "nudge_all_widths_wider": return .nudgeAllWidthsWider
+        default: return nil
         }
     }
 
@@ -178,28 +158,48 @@ struct KeybindingResolver {
     }
 
     private static func normalizedKeybindingCandidates(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> [String] {
-        let modifierPartsList = normalizedModifierPartCandidates(from: modifiers)
-        return normalizedKeyNames(keyCode: keyCode, keyText: keyText).flatMap { keyName in
-            modifierPartsList.map { modifierParts in
-                (modifierParts + [keyName]).joined(separator: "+")
+        var candidates: [String] = []
+        let appendCandidates: ([String], [String]) -> Void = { modifierParts, keyNames in
+            for keyName in keyNames {
+                let candidate = (modifierParts + [keyName]).joined(separator: "+")
+                if !candidates.contains(candidate) {
+                    candidates.append(candidate)
+                }
             }
         }
+
+        for modifierParts in normalizedModifierPartCandidates(from: modifiers) {
+            appendCandidates(
+                modifierParts,
+                normalizedKeyNames(
+                    keyCode: keyCode,
+                    keyText: keyText,
+                    includeFnNavigationAliases: modifiers.contains(.maskSecondaryFn)
+                )
+            )
+        }
+
+        if modifiers.contains(.maskSecondaryFn) {
+            var legacyModifiers = modifiers
+            legacyModifiers.remove(.maskSecondaryFn)
+            for modifierParts in normalizedModifierPartCandidates(from: legacyModifiers) {
+                appendCandidates(
+                    modifierParts,
+                    normalizedKeyNames(keyCode: keyCode, keyText: keyText, includeFnNavigationAliases: false)
+                )
+            }
+        }
+
+        return candidates
     }
 
     private static func normalizedModifierPartCandidates(from modifiers: CGEventFlags) -> [[String]] {
         var names = Set<String>()
-        if modifiers.contains(.maskCommand) {
-            names.insert("cmd")
-        }
-        if modifiers.contains(.maskControl) {
-            names.insert("ctrl")
-        }
-        if modifiers.contains(.maskShift) {
-            names.insert("shift")
-        }
-        if modifiers.contains(.maskAlternate) {
-            names.insert("alt")
-        }
+        if modifiers.contains(.maskCommand) { names.insert("cmd") }
+        if modifiers.contains(.maskControl) { names.insert("ctrl") }
+        if modifiers.contains(.maskShift) { names.insert("shift") }
+        if modifiers.contains(.maskAlternate) { names.insert("alt") }
+        if modifiers.contains(.maskSecondaryFn) { names.insert("fn") }
 
         let generic = orderedModifierParts(from: names)
         var candidates = [generic]
@@ -221,74 +221,79 @@ struct KeybindingResolver {
     }
 
     private static func orderedModifierParts(from modifiers: Set<String>) -> [String] {
-        ["cmd", "ctrl", "shift", "alt", "lalt", "ralt"].filter { modifiers.contains($0) }
+        ["cmd", "ctrl", "shift", "alt", "lalt", "ralt", "fn"].filter { modifiers.contains($0) }
     }
 
-    private static func normalizedKeyNames(keyCode: Int64, keyText: String) -> [String] {
+    private static func normalizedKeyNames(keyCode: Int64, keyText: String, includeFnNavigationAliases: Bool) -> [String] {
         var names: [String] = []
         let add: (String) -> Void = { name in
             let normalized = normalizedKeyName(name)
-            if !names.contains(normalized) {
-                names.append(normalized)
-            }
+            if !names.contains(normalized) { names.append(normalized) }
         }
 
-        if !keyText.isEmpty {
-            add(keyText)
+        if !keyText.isEmpty { add(keyText) }
+        for name in keyNamesByCode[keyCode] ?? [] { add(name) }
+        if includeFnNavigationAliases {
+            for name in fnNavigationKeyAliasesByCode[keyCode] ?? [] { add(name) }
         }
-
-        switch keyCode {
-        case KeyCode.one: add("1")
-        case KeyCode.two: add("2")
-        case KeyCode.three: add("3")
-        case KeyCode.four: add("4")
-        case KeyCode.five: add("5")
-        case KeyCode.six: add("6")
-        case KeyCode.seven: add("7")
-        case KeyCode.eight: add("8")
-        case KeyCode.nine: add("9")
-        case KeyCode.zero: add("0")
-        case KeyCode.h: add("h")
-        case KeyCode.j: add("j")
-        case KeyCode.k: add("k")
-        case KeyCode.l: add("l")
-        case KeyCode.minus:
-            add("-")
-            add("minus")
-        case KeyCode.equal:
-            add("=")
-            add("equal")
-        case KeyCode.home: add("home")
-        case KeyCode.end: add("end")
-        case KeyCode.leftBracket:
-            add("[")
-            add("{")
-        case KeyCode.rightBracket:
-            add("]")
-            add("}")
-        default:
-            break
-        }
-
         return names
     }
 
     private static func normalizedKeyName(_ key: String) -> String {
-        switch key.lowercased() {
-        case "leftbracket", "left-bracket", "openbracket", "open-bracket":
-            return "["
-        case "rightbracket", "right-bracket", "closebracket", "close-bracket":
-            return "]"
-        case "leftbrace", "left-brace", "openbrace", "open-brace":
-            return "{"
-        case "rightbrace", "right-brace", "closebrace", "close-brace":
-            return "}"
-        case "minus":
-            return "-"
-        case "equal":
-            return "="
-        default:
-            return key
-        }
+        keyNameAliases[key.lowercased()] ?? key
     }
+
+    private static let keyNamesByCode: [Int64: [String]] = [
+        KeyCode.a: ["a"], KeyCode.b: ["b"], KeyCode.c: ["c"], KeyCode.d: ["d"],
+        KeyCode.e: ["e"], KeyCode.f: ["f"], KeyCode.g: ["g"], KeyCode.h: ["h"],
+        KeyCode.i: ["i"], KeyCode.j: ["j"], KeyCode.k: ["k"], KeyCode.l: ["l"],
+        KeyCode.m: ["m"], KeyCode.n: ["n"], KeyCode.o: ["o"], KeyCode.p: ["p"],
+        KeyCode.q: ["q"], KeyCode.r: ["r"], KeyCode.s: ["s"], KeyCode.t: ["t"],
+        KeyCode.u: ["u"], KeyCode.v: ["v"], KeyCode.w: ["w"], KeyCode.x: ["x"],
+        KeyCode.y: ["y"], KeyCode.z: ["z"],
+        KeyCode.one: ["1"], KeyCode.two: ["2"], KeyCode.three: ["3"], KeyCode.four: ["4"],
+        KeyCode.five: ["5"], KeyCode.six: ["6"], KeyCode.seven: ["7"], KeyCode.eight: ["8"],
+        KeyCode.nine: ["9"], KeyCode.zero: ["0"],
+        KeyCode.minus: ["-", "minus"], KeyCode.equal: ["=", "equal"],
+        KeyCode.leftBracket: ["[", "{"], KeyCode.rightBracket: ["]", "}"],
+        KeyCode.semicolon: [";"], KeyCode.quote: ["'"], KeyCode.comma: [","],
+        KeyCode.period: ["."], KeyCode.slash: ["/"], KeyCode.backslash: ["\\"], KeyCode.grave: ["`"],
+        KeyCode.tab: ["tab"], KeyCode.space: ["space"], KeyCode.returnKey: ["return", "enter"],
+        KeyCode.escape: ["escape"], KeyCode.delete: ["delete", "backspace"],
+        KeyCode.forwardDelete: ["forward-delete"],
+        KeyCode.home: ["home"], KeyCode.end: ["end"], KeyCode.pageUp: ["pageup"],
+        KeyCode.pageDown: ["pagedown"], KeyCode.leftArrow: ["left"], KeyCode.rightArrow: ["right"],
+        KeyCode.upArrow: ["up"], KeyCode.downArrow: ["down"],
+        KeyCode.f1: ["f1"], KeyCode.f2: ["f2"], KeyCode.f3: ["f3"], KeyCode.f4: ["f4"],
+        KeyCode.f5: ["f5"], KeyCode.f6: ["f6"], KeyCode.f7: ["f7"], KeyCode.f8: ["f8"],
+        KeyCode.f9: ["f9"], KeyCode.f10: ["f10"], KeyCode.f11: ["f11"], KeyCode.f12: ["f12"],
+    ]
+
+    private static let fnNavigationKeyAliasesByCode: [Int64: [String]] = [
+        KeyCode.leftArrow: ["home"], KeyCode.rightArrow: ["end"],
+        KeyCode.upArrow: ["pageup"], KeyCode.downArrow: ["pagedown"],
+        KeyCode.home: ["left"], KeyCode.end: ["right"],
+        KeyCode.pageUp: ["up"], KeyCode.pageDown: ["down"],
+    ]
+
+    private static let keyNameAliases: [String: String] = [
+        "leftbracket": "[", "left-bracket": "[", "openbracket": "[", "open-bracket": "[",
+        "rightbracket": "]", "right-bracket": "]", "closebracket": "]", "close-bracket": "]",
+        "leftbrace": "{", "left-brace": "{", "openbrace": "{", "open-brace": "{",
+        "rightbrace": "}", "right-brace": "}", "closebrace": "}", "close-brace": "}",
+        "minus": "-", "hyphen": "-", "dash": "-", "equal": "=", "equals": "=",
+        "semicolon": ";", "quote": "'", "apostrophe": "'", "singlequote": "'", "single-quote": "'",
+        "comma": ",", "period": ".", "dot": ".", "fullstop": ".", "full-stop": ".",
+        "slash": "/", "forwardslash": "/", "forward-slash": "/",
+        "backslash": "\\", "back-slash": "\\", "grave": "`", "backtick": "`", "backquote": "`",
+        "esc": "escape", "enter": "return", "backspace": "delete",
+        "forwarddelete": "forward-delete", "fwddelete": "forward-delete", "del": "forward-delete",
+        "spacebar": "space",
+        "leftarrow": "left", "left-arrow": "left", "arrowleft": "left", "arrow-left": "left",
+        "rightarrow": "right", "right-arrow": "right", "arrowright": "right", "arrow-right": "right",
+        "uparrow": "up", "up-arrow": "up", "arrowup": "up", "arrow-up": "up",
+        "downarrow": "down", "down-arrow": "down", "arrowdown": "down", "arrow-down": "down",
+        "pgup": "pageup", "page-up": "pageup", "page_up": "pageup",
+        "pgdn": "pagedown", "pgdown": "pagedown", "page-down": "pagedown", "page_down": "pagedown",
+    ]
 }

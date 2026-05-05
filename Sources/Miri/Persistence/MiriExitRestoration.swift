@@ -13,7 +13,7 @@ extension Miri {
             setWindowAlpha(1, for: window.windowID)
             setAXFrame(viewport, for: window.element)
         }
-        restoreFloatingVisibility()
+        restoreFloatingVisibility(raise: true)
         try? FileManager.default.removeItem(at: restoreStateURL)
     }
 
@@ -24,12 +24,13 @@ extension Miri {
         }
 
         let ids = Array(Set(tiledWindows().compactMap(\.windowID))).sorted()
-        guard !ids.isEmpty else {
+        let floatingIDs = Array(Set(floatingWindows.compactMap(\.windowID))).sorted()
+        guard !ids.isEmpty || !floatingIDs.isEmpty else {
             try? FileManager.default.removeItem(at: restoreStateURL)
             return
         }
 
-        let snapshot = RestoreSnapshot(windowIDs: ids, viewport: RectSnapshot(viewport))
+        let snapshot = RestoreSnapshot(windowIDs: ids, floatingWindowIDs: floatingIDs, viewport: RectSnapshot(viewport))
         guard let data = try? JSONEncoder().encode(snapshot) else {
             return
         }

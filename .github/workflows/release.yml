@@ -1,0 +1,235 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-nightly.*"
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        required: false
+        default: stable
+        type: choice
+        options:
+          - stable
+          - nightly
+      version:
+        description: Release version, for example 1.2.3 or v1.2.3
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  check_changes:
+    name: Check for changes since last nightly
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - id: check
+        name: Compare HEAD to last nightly tag
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "schedule" ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          last_nightly_tag="$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -n 1)"
+          if [[ -z "$last_nightly_tag" ]]; then
+            echo "No previous nightly tag found. Proceeding."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          last_nightly_sha="$(git rev-parse "$last_nightly_tag^{commit}")"
+          head_sha="$(git rev-parse HEAD)"
+
+          if [[ "$last_nightly_sha" == "$head_sha" ]]; then
+            echo "No changes since $last_nightly_tag. Skipping nightly."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected since $last_nightly_tag. Proceeding."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  preflight:
+    name: Preflight
+    needs: [check_changes]
+    if: needs.check_changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      make_latest: ${{ steps.meta.outputs.make_latest }}
+      ref: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - id: meta
+        name: Resolve release metadata
+        shell: bash
+        env:
+          DISPATCH_CHANNEL: ${{ github.event.inputs.channel }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short_sha="${SHA:0:12}"
+
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" || ( "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "${DISPATCH_CHANNEL:-stable}" == "nightly" ) ]]; then
+            latest_stable_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1 || true)"
+            if [[ "$latest_stable_tag" =~ ^v([0-9]+)[.]([0-9]+)[.]([0-9]+)$ ]]; then
+              base_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+            else
+              base_version="0.1.0"
+            fi
+
+            nightly_date="$(date -u +%Y%m%d)"
+            version="$base_version-nightly.$nightly_date.$RUN_NUMBER"
+            tag="v$version"
+
+            {
+              echo "version=$version"
+              echo "tag=$tag"
+              echo "release_name=Miri Nightly $version ($short_sha)"
+              echo "prerelease=true"
+              echo "make_latest=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            raw="${DISPATCH_VERSION:-}"
+            if [[ -z "$raw" ]]; then
+              echo "Stable workflow_dispatch releases require the version input." >&2
+              exit 1
+            fi
+          else
+            raw="$GITHUB_REF_NAME"
+          fi
+
+          version="${raw#v}"
+          if [[ ! "$version" =~ ^[0-9]+[.][0-9]+[.][0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $raw" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "release_name=Miri v$version"
+            if [[ "$version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+              echo "prerelease=false"
+              echo "make_latest=true"
+            else
+              echo "prerelease=true"
+              echo "make_latest=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+  build_macos:
+    name: Build macOS DMG
+    needs: preflight
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' }}
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version || true
+
+      - name: Package DMG
+        run: |
+          scripts/package-macos.sh \
+            --version "${{ needs.preflight.outputs.version }}" \
+            --build-number "${{ github.run_number }}" \
+            --output-dir dist
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: miri-macos-dmg
+          path: |
+            dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [preflight, build_macos]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.build_macos.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Ensure release tag exists
+        shell: bash
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
+          REF: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git show-ref --quiet --tags "$TAG"; then
+            echo "Tag $TAG already exists."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG" "$REF"
+          git push origin "refs/tags/$TAG"
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: miri-macos-dmg
+          path: release-assets
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          target_commitish: ${{ needs.preflight.outputs.ref }}
+          name: ${{ needs.preflight.outputs.release_name }}
+          generate_release_notes: true
+          prerelease: ${{ needs.preflight.outputs.prerelease }}
+          make_latest: ${{ needs.preflight.outputs.make_latest }}
+          files: |
+            release-assets/*.dmg
+          fail_on_unmatched_files: true

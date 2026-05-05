@@ -34,6 +34,8 @@ final class Miri: NSObject, @unchecked Sendable {
     var hoverFocusRequiresRearm = false
     var hoverFocusSuppressedUntil: CFAbsoluteTime = 0
     var transientWindowActive = false
+    var floatingRaiseGeneration: UInt64 = 0
+    let floatingWindowLevel = Int32(CGWindowLevelForKey(.floatingWindow))
     var transientWindowStateCheckedAt: CFAbsoluteTime = 0
     var trackpadNavigation: ThreeFingerTrackpadNavigation?
     var trackpadCameraY: CGFloat?

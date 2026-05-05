@@ -2,54 +2,25 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Miri"
-BUNDLE_ID="${BUNDLE_ID:-local.miri}"
-CONFIGURATION="release"
-DIST_DIR="$ROOT_DIR/dist"
-APP_DIR="$DIST_DIR/$APP_NAME.app"
-CONTENTS_DIR="$APP_DIR/Contents"
-MACOS_DIR="$CONTENTS_DIR/MacOS"
-RESOURCES_DIR="$CONTENTS_DIR/Resources"
+VERSION="${MIRI_VERSION:-0.1.0-dev}"
+BUILD_NUMBER="${MIRI_BUILD_NUMBER:-1}"
+OUTPUT_DIR="${MIRI_OUTPUT_DIR:-dist}"
 
 cd "$ROOT_DIR"
 
-swift build -c "$CONFIGURATION"
+scripts/package-macos.sh \
+  --version "$VERSION" \
+  --build-number "$BUILD_NUMBER" \
+  --output-dir "$OUTPUT_DIR" \
+  --keep-stage
+
+STAGED_APP="$ROOT_DIR/$OUTPUT_DIR/stage/arm64-darwin/volume/Miri.app"
+APP_DIR="$ROOT_DIR/$OUTPUT_DIR/Miri.app"
 
 rm -rf "$APP_DIR"
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+cp -R "$STAGED_APP" "$APP_DIR"
 
-cp "$ROOT_DIR/.build/$CONFIGURATION/miri" "$MACOS_DIR/miri"
-chmod +x "$MACOS_DIR/miri"
-
-cat > "$CONTENTS_DIR/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleDisplayName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleIdentifier</key>
-  <string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
-  <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
-  <key>CFBundleExecutable</key>
-  <string>miri</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>13.0</string>
-  <key>LSUIElement</key>
-  <true/>
-</dict>
-</plist>
-PLIST
-
-# Ad-hoc sign so macOS treats the bundle as a stable app identity for permissions.
-codesign --force --deep --sign - "$APP_DIR" >/dev/null
-
+# Keep package-app.sh compatible with the old local-dev workflow: leave a directly
+# openable .app at dist/Miri.app, while package-macos.sh also creates the DMG.
 echo "Packaged $APP_DIR"
 echo "Launch with: open '$APP_DIR'"

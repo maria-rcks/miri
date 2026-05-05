@@ -5,13 +5,15 @@ import Darwin
 import Foundation
 
 enum WindowRestoration {
-    static func restore(windowIDs: Set<UInt32>, viewport: CGRect) {
-        guard !windowIDs.isEmpty else {
+    static func restore(windowIDs: Set<UInt32>, floatingWindowIDs: Set<UInt32>, viewport: CGRect) {
+        let restoreWindowIDs = windowIDs.union(floatingWindowIDs)
+        guard !restoreWindowIDs.isEmpty else {
             return
         }
 
-        for windowID in windowIDs {
+        for windowID in restoreWindowIDs {
             SkyLight.shared.setAlpha(1, for: windowID)
+            SkyLight.shared.setLevel(Int32(CGWindowLevelForKey(.normalWindow)), for: windowID)
         }
 
         guard AXIsProcessTrusted() else {
@@ -28,7 +30,7 @@ enum WindowRestoration {
 
             for element in axWindows {
                 guard let windowID = SkyLight.shared.windowID(for: element),
-                      windowIDs.contains(windowID)
+                      restoreWindowIDs.contains(windowID)
                 else {
                     continue
                 }
@@ -65,6 +67,10 @@ enum CleanupWatcher {
             return
         }
 
-        WindowRestoration.restore(windowIDs: Set(snapshot.windowIDs), viewport: snapshot.viewport.cgRect)
+        WindowRestoration.restore(
+            windowIDs: Set(snapshot.windowIDs),
+            floatingWindowIDs: Set(snapshot.floatingWindowIDs ?? []),
+            viewport: snapshot.viewport.cgRect
+        )
     }
 }

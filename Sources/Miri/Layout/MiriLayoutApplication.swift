@@ -36,7 +36,7 @@ extension Miri {
         isApplyingLayout = true
         let layout = layoutItems(viewport: viewport, state: targetState, parkHidden: true)
         applyLayout(layout, focusActiveWindow: focusActiveWindow)
-        restoreFloatingVisibility()
+        restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
         releaseLayoutLock(after: layoutLockDelay)
     }
 
@@ -155,9 +155,35 @@ extension Miri {
         }
     }
 
-    func restoreFloatingVisibility() {
+    func restoreFloatingVisibility(raise: Bool = false, deferred: Bool = false) {
         for window in floatingWindows {
             setWindowAlpha(1, for: window.windowID)
+            if raise {
+                setWindowLevel(floatingWindowLevel, for: window.windowID)
+            }
+        }
+
+        if raise && deferred {
+            scheduleFloatingWindowRaise()
+        }
+    }
+
+    func setWindowLevel(_ level: Int32, for windowID: UInt32?) {
+        _ = SkyLight.shared.setLevel(level, for: windowID)
+    }
+
+    func scheduleFloatingWindowRaise() {
+        guard !floatingWindows.isEmpty else {
+            return
+        }
+
+        floatingRaiseGeneration &+= 1
+        let generation = floatingRaiseGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self, generation == floatingRaiseGeneration else {
+                return
+            }
+            restoreFloatingVisibility(raise: true)
         }
     }
 
