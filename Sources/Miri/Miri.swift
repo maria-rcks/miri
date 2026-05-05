@@ -4,70 +4,13 @@ import CoreGraphics
 import Darwin
 import Foundation
 
-struct RuleAppInfo {
-    let bundleID: String
-    let appName: String
-}
-
-struct MiriStatus {
-    let workspace: Int
-    let workspaceCount: Int
-    let focusedWindow: String
-    let widthPercent: Int?
-}
-
-struct MiriWorkspaceSummary {
-    let workspace: Int
-    let isActive: Bool
-    let lastFocusedWindow: MiriWorkspaceBarWindow?
-    let appNames: [String]
-}
-
-struct MiriWorkspaceBarStatus {
-    let workspace: Int
-    let focusedIndex: Int?
-    let windows: [MiriWorkspaceBarWindow]
-    let occupiedWorkspaces: [MiriWorkspaceSummary]
-}
-
-struct MiriWorkspaceBarWindow {
-    let bundleID: String?
-    let appName: String
-    let title: String
-}
-
-private struct FullscreenWindowState {
-    let identity: PersistentWindowIdentity
-    let element: AXUIElement
-    let pid: pid_t
-    let windowID: UInt32?
-    let bundleID: String?
-    let appName: String
-    let title: String
-    let workspace: Int
-    let column: Int
-    let leftNeighborID: ObjectIdentifier?
-    let rightNeighborID: ObjectIdentifier?
-    let leftNeighbor: PersistentWindowIdentity?
-    let rightNeighbor: PersistentWindowIdentity?
-    let widthRatio: CGFloat
-    let wasActive: Bool
-}
-
 final class Miri: NSObject, @unchecked Sendable {
-    private struct TrackpadNavigationSettings: Equatable {
-        var enabled: Bool
-        var fingers: Int
-        var invertX: Bool
-        var invertY: Bool
-    }
-
     private struct TransientSystemWindow {
         var element: AXUIElement
     }
 
     private var loadedConfig = MiriConfig.loadWithMetadata()
-    private var config: MiriConfig {
+    var config: MiriConfig {
         loadedConfig.config
     }
     private var workspaces: [Workspace] = [Workspace()]
@@ -493,9 +436,9 @@ final class Miri: NSObject, @unchecked Sendable {
     }
 
     private func configureInput() {
-        commandByKeybinding = makeCommandByKeybinding()
+        commandByKeybinding = KeybindingResolver.makeCommandByKeybinding(config: config)
         excludedKeybindingSet = Set((config.excludedKeybindings ?? MiriConfig.fallback.excludedKeybindings ?? [])
-            .compactMap(normalizedKeybinding(_:)))
+            .compactMap(KeybindingResolver.normalizedKeybinding(_:)))
     }
 
     fileprivate func handleEventTapDisabled(_ type: CGEventType) {
@@ -515,12 +458,22 @@ final class Miri: NSObject, @unchecked Sendable {
         let modifiers = event.flags
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let keyText = keyboardText(from: event)
-        guard !isExcludedKeybinding(modifiers: modifiers, keyCode: keyCode, keyText: keyText) else {
+        let keyText = KeybindingResolver.keyboardText(from: event)
+        guard !KeybindingResolver.isExcludedKeybinding(
+            modifiers: modifiers,
+            keyCode: keyCode,
+            keyText: keyText,
+            excludedKeybindingSet: excludedKeybindingSet
+        ) else {
             return false
         }
 
-        guard let command = commandForKeyEvent(modifiers: modifiers, keyCode: keyCode, keyText: keyText) else {
+        guard let command = KeybindingResolver.commandForKeyEvent(
+            modifiers: modifiers,
+            keyCode: keyCode,
+            keyText: keyText,
+            commandByKeybinding: commandByKeybinding
+        ) else {
             return false
         }
 
@@ -528,286 +481,6 @@ final class Miri: NSObject, @unchecked Sendable {
             self?.perform(command)
         }
         return true
-    }
-
-    private func makeCommandByKeybinding() -> [String: Command] {
-        var configured = MiriConfig.defaultKeybindings
-        for (name, bindings) in config.keybindings ?? [:] {
-            configured[name] = bindings
-        }
-
-        var commands: [String: Command] = [:]
-        for name in configured.keys.sorted() {
-            let bindings = configured[name] ?? []
-            guard let command = command(named: name) else {
-                fputs("miri: ignoring unknown keybinding command '\(name)'\n", stderr)
-                continue
-            }
-
-            for binding in bindings {
-                guard let normalized = normalizedKeybinding(binding) else {
-                    fputs("miri: ignoring invalid keybinding '\(binding)' for '\(name)'\n", stderr)
-                    continue
-                }
-                if commands[normalized] != nil {
-                    fputs("miri: keybinding '\(binding)' is assigned more than once; using '\(name)'\n", stderr)
-                }
-                commands[normalized] = command
-            }
-        }
-
-        return commands
-    }
-
-    private func commandForKeyEvent(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> Command? {
-        for candidate in normalizedKeybindingCandidates(modifiers: modifiers, keyCode: keyCode, keyText: keyText) {
-            if let command = commandByKeybinding[candidate] {
-                return command
-            }
-        }
-        return nil
-    }
-
-    private func command(named name: String) -> Command? {
-        if let index = commandIndex(name, prefix: "focus_workspace_") {
-            return .focusWorkspace(index)
-        }
-        if let index = commandIndex(name, prefix: "move_column_to_workspace_") {
-            return .moveColumnToWorkspace(index)
-        }
-
-        switch name {
-        case "focus_previous_workspace":
-            return .focusPreviousWorkspace
-        case "workspace_down":
-            return .workspaceDown
-        case "workspace_up":
-            return .workspaceUp
-        case "column_left":
-            return .columnLeft
-        case "column_right":
-            return .columnRight
-        case "column_first":
-            return .columnFirst
-        case "column_last":
-            return .columnLast
-        case "move_column_left":
-            return .moveColumnLeft
-        case "move_column_right":
-            return .moveColumnRight
-        case "move_column_to_first":
-            return .moveColumnToFirst
-        case "move_column_to_last":
-            return .moveColumnToLast
-        case "move_column_down":
-            return .moveColumnToWorkspaceDown
-        case "move_column_up":
-            return .moveColumnToWorkspaceUp
-        case "cycle_width_preset_backward":
-            return .cycleWidthPresetBackward
-        case "cycle_width_preset_forward":
-            return .cycleWidthPresetForward
-        case "nudge_width_narrower":
-            return .nudgeWidthNarrower
-        case "nudge_width_wider":
-            return .nudgeWidthWider
-        case "cycle_all_width_presets_backward":
-            return .cycleAllWidthPresetsBackward
-        case "cycle_all_width_presets_forward":
-            return .cycleAllWidthPresetsForward
-        case "nudge_all_widths_narrower":
-            return .nudgeAllWidthsNarrower
-        case "nudge_all_widths_wider":
-            return .nudgeAllWidthsWider
-        default:
-            return nil
-        }
-    }
-
-    private func commandIndex(_ name: String, prefix: String) -> Int? {
-        guard name.hasPrefix(prefix),
-              let index = Int(name.dropFirst(prefix.count)),
-              (1...9).contains(index)
-        else {
-            return nil
-        }
-        return index
-    }
-
-    private func keyboardText(from event: CGEvent) -> String {
-        var length = 0
-        event.keyboardGetUnicodeString(maxStringLength: 0, actualStringLength: &length, unicodeString: nil)
-        guard length > 0 else {
-            return ""
-        }
-
-        var chars = [UniChar](repeating: 0, count: length)
-        event.keyboardGetUnicodeString(maxStringLength: length, actualStringLength: &length, unicodeString: &chars)
-        return String(utf16CodeUnits: chars, count: length)
-    }
-
-    private func isExcludedKeybinding(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> Bool {
-        guard !excludedKeybindingSet.isEmpty else {
-            return false
-        }
-
-        for candidate in normalizedKeybindingCandidates(modifiers: modifiers, keyCode: keyCode, keyText: keyText) {
-            if excludedKeybindingSet.contains(candidate) {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private func normalizedKeybindingCandidates(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> [String] {
-        let modifierPartsList = normalizedModifierPartCandidates(from: modifiers)
-        return normalizedKeyNames(keyCode: keyCode, keyText: keyText).flatMap { keyName in
-            modifierPartsList.map { modifierParts in
-                (modifierParts + [keyName]).joined(separator: "+")
-            }
-        }
-    }
-
-    private func normalizedKeybinding(_ binding: String) -> String? {
-        let parts = binding
-            .lowercased()
-            .split(separator: "+")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        var modifiers = Set<String>()
-        var key: String?
-        for part in parts {
-            switch part {
-            case "cmd", "command":
-                modifiers.insert("cmd")
-            case "ctrl", "control":
-                modifiers.insert("ctrl")
-            case "shift":
-                modifiers.insert("shift")
-            case "alt", "option", "alternate":
-                modifiers.insert("alt")
-            case "lalt", "leftalt", "left_alt", "leftoption", "left_option", "left-option":
-                modifiers.insert("lalt")
-            case "ralt", "rightalt", "right_alt", "rightoption", "right_option", "right-option":
-                modifiers.insert("ralt")
-            default:
-                key = normalizedKeyName(part)
-            }
-        }
-
-        guard let key else {
-            return nil
-        }
-
-        return (orderedModifierParts(from: modifiers) + [key]).joined(separator: "+")
-    }
-
-    private func normalizedModifierPartCandidates(from modifiers: CGEventFlags) -> [[String]] {
-        var names = Set<String>()
-        if modifiers.contains(.maskCommand) {
-            names.insert("cmd")
-        }
-        if modifiers.contains(.maskControl) {
-            names.insert("ctrl")
-        }
-        if modifiers.contains(.maskShift) {
-            names.insert("shift")
-        }
-        if modifiers.contains(.maskAlternate) {
-            names.insert("alt")
-        }
-
-        let generic = orderedModifierParts(from: names)
-        var candidates = [generic]
-
-        if modifiers.rawValue & 0x00000020 != 0, names.contains("alt") {
-            var leftAltNames = names
-            leftAltNames.remove("alt")
-            leftAltNames.insert("lalt")
-            candidates.append(orderedModifierParts(from: leftAltNames))
-        }
-        if modifiers.rawValue & 0x00000040 != 0, names.contains("alt") {
-            var rightAltNames = names
-            rightAltNames.remove("alt")
-            rightAltNames.insert("ralt")
-            candidates.append(orderedModifierParts(from: rightAltNames))
-        }
-
-        return candidates
-    }
-
-    private func orderedModifierParts(from modifiers: Set<String>) -> [String] {
-        ["cmd", "ctrl", "shift", "alt", "lalt", "ralt"].filter { modifiers.contains($0) }
-    }
-
-    private func normalizedKeyNames(keyCode: Int64, keyText: String) -> [String] {
-        var names: [String] = []
-        let add: (String) -> Void = { name in
-            let normalized = self.normalizedKeyName(name)
-            if !names.contains(normalized) {
-                names.append(normalized)
-            }
-        }
-
-        if !keyText.isEmpty {
-            add(keyText)
-        }
-
-        switch keyCode {
-        case KeyCode.one: add("1")
-        case KeyCode.two: add("2")
-        case KeyCode.three: add("3")
-        case KeyCode.four: add("4")
-        case KeyCode.five: add("5")
-        case KeyCode.six: add("6")
-        case KeyCode.seven: add("7")
-        case KeyCode.eight: add("8")
-        case KeyCode.nine: add("9")
-        case KeyCode.zero: add("0")
-        case KeyCode.h: add("h")
-        case KeyCode.j: add("j")
-        case KeyCode.k: add("k")
-        case KeyCode.l: add("l")
-        case KeyCode.minus:
-            add("-")
-            add("minus")
-        case KeyCode.equal:
-            add("=")
-            add("equal")
-        case KeyCode.home: add("home")
-        case KeyCode.end: add("end")
-        case KeyCode.leftBracket:
-            add("[")
-            add("{")
-        case KeyCode.rightBracket:
-            add("]")
-            add("}")
-        default:
-            break
-        }
-
-        return names
-    }
-
-    private func normalizedKeyName(_ key: String) -> String {
-        switch key.lowercased() {
-        case "leftbracket", "left-bracket", "openbracket", "open-bracket":
-            return "["
-        case "rightbracket", "right-bracket", "closebracket", "close-bracket":
-            return "]"
-        case "leftbrace", "left-brace", "openbrace", "open-brace":
-            return "{"
-        case "rightbrace", "right-brace", "closebrace", "close-brace":
-            return "}"
-        case "minus":
-            return "-"
-        case "equal":
-            return "="
-        default:
-            return key
-        }
     }
 
     fileprivate func handleMouseMoved(_ event: CGEvent) {
@@ -2064,196 +1737,6 @@ final class Miri: NSObject, @unchecked Sendable {
         for workspace in workspaces {
             workspace.clampFocus()
         }
-    }
-
-    private var animationDuration: TimeInterval {
-        TimeInterval(config.animationDurationMS ?? MiriConfig.fallback.animationDurationMS ?? 240) / 1000
-    }
-
-    private var keyboardAnimationDuration: TimeInterval {
-        let fallback = config.animationDurationMS ?? MiriConfig.fallback.animationDurationMS ?? 240
-        return TimeInterval(config.keyboardAnimationMS ?? fallback) / 1000
-    }
-
-    private var hoverFocusAnimationDuration: TimeInterval {
-        let fallback = config.animationDurationMS ?? MiriConfig.fallback.animationDurationMS ?? 240
-        return TimeInterval(config.hoverFocusAnimationMS ?? fallback) / 1000
-    }
-
-    private var trackpadSettleAnimationDuration: TimeInterval {
-        let milliseconds: Int
-        if let navigationSpecific = config.trackpadNavigationSettleAnimationMS,
-           navigationSpecific != (MiriConfig.fallback.trackpadNavigationSettleAnimationMS ?? 240)
-        {
-            milliseconds = navigationSpecific
-        } else {
-            milliseconds = config.trackpadSettleAnimationMS
-                ?? config.trackpadNavigationSettleAnimationMS
-                ?? config.animationDurationMS
-                ?? MiriConfig.fallback.trackpadSettleAnimationMS
-                ?? 240
-        }
-        return TimeInterval(milliseconds) / 1000
-    }
-
-    private var moveColumnAnimationDuration: TimeInterval {
-        let fallback = config.animationDurationMS ?? MiriConfig.fallback.animationDurationMS ?? 240
-        return TimeInterval(config.moveColumnAnimationMS ?? fallback) / 1000
-    }
-
-    private var widthAnimationDuration: TimeInterval {
-        let fallback = config.keyboardAnimationMS
-            ?? config.animationDurationMS
-            ?? MiriConfig.fallback.widthAnimationMS
-            ?? 280
-        return TimeInterval(config.widthAnimationMS ?? fallback) / 1000
-    }
-
-    private var animationCurve: AnimationCurve {
-        config.animationCurve ?? MiriConfig.fallback.animationCurve ?? .smooth
-    }
-
-    private var animationFPS: Int {
-        config.animationFPS ?? MiriConfig.fallback.animationFPS ?? 30
-    }
-
-    private var animationPixelThreshold: CGFloat {
-        config.animationPixelThreshold ?? MiriConfig.fallback.animationPixelThreshold ?? 2
-    }
-
-    private var hoverFocusEnabled: Bool {
-        (config.hoverToFocus ?? MiriConfig.fallback.hoverToFocus ?? true) && hoverFocusMode != .off
-    }
-
-    private var hoverFocusDelay: TimeInterval {
-        TimeInterval(config.hoverFocusDelayMS ?? MiriConfig.fallback.hoverFocusDelayMS ?? 120) / 1000
-    }
-
-    private var hoverFocusMaxScrollRatio: CGFloat {
-        config.hoverFocusRequiresVisibleRatio
-            ?? config.hoverFocusMaxScrollRatio
-            ?? MiriConfig.fallback.hoverFocusRequiresVisibleRatio
-            ?? MiriConfig.fallback.hoverFocusMaxScrollRatio
-            ?? 0.15
-    }
-
-    private var hoverFocusEdgeTriggerWidth: CGFloat {
-        config.hoverFocusEdgeTriggerWidth ?? MiriConfig.fallback.hoverFocusEdgeTriggerWidth ?? 8
-    }
-
-    private var hoverFocusAfterTrackpad: TimeInterval {
-        let milliseconds: Int
-        if let navigationSpecific = config.trackpadNavigationHoverSuppressionMS,
-           navigationSpecific != (MiriConfig.fallback.trackpadNavigationHoverSuppressionMS ?? 280)
-        {
-            milliseconds = navigationSpecific
-        } else {
-            milliseconds = config.hoverFocusAfterTrackpadMS
-                ?? config.trackpadNavigationHoverSuppressionMS
-                ?? MiriConfig.fallback.hoverFocusAfterTrackpadMS
-                ?? 280
-        }
-        return TimeInterval(milliseconds) / 1000
-    }
-
-    private var hoverFocusMode: HoverFocusMode {
-        config.hoverFocusMode ?? MiriConfig.fallback.hoverFocusMode ?? .edgeOrVisible
-    }
-
-    private var workspaceAutoBackAndForth: Bool {
-        config.workspaceAutoBackAndForth ?? MiriConfig.fallback.workspaceAutoBackAndForth ?? true
-    }
-
-    private var focusAlignment: FocusAlignment {
-        if let focusAlignment = config.focusAlignment {
-            return focusAlignment
-        }
-        if let centerFocusedColumn = config.centerFocusedColumn {
-            return centerFocusedColumn ? .smart : .left
-        }
-        if let focusAlignment = MiriConfig.fallback.focusAlignment {
-            return focusAlignment
-        }
-        return (config.centerFocusedColumn ?? MiriConfig.fallback.centerFocusedColumn ?? true) ? .smart : .left
-    }
-
-    private var newWindowPosition: NewWindowPosition {
-        config.newWindowPosition ?? MiriConfig.fallback.newWindowPosition ?? .afterActive
-    }
-
-    private var innerGap: CGFloat {
-        config.innerGap ?? MiriConfig.fallback.innerGap ?? 0
-    }
-
-    private var outerGap: CGFloat {
-        config.outerGap ?? MiriConfig.fallback.outerGap ?? 0
-    }
-
-    private var parkedSliverWidth: CGFloat {
-        config.parkedSliverWidth ?? MiriConfig.fallback.parkedSliverWidth ?? 1
-    }
-
-    private var trackpadNavigationEnabled: Bool {
-        config.trackpadNavigation ?? MiriConfig.fallback.trackpadNavigation ?? true
-    }
-
-    private var trackpadNavigationFingers: Int {
-        config.trackpadNavigationFingers ?? MiriConfig.fallback.trackpadNavigationFingers ?? 3
-    }
-
-    private var trackpadNavigationSensitivity: CGFloat {
-        config.trackpadNavigationSensitivity ?? MiriConfig.fallback.trackpadNavigationSensitivity ?? 1.6
-    }
-
-    private var trackpadNavigationDeceleration: CGFloat {
-        config.trackpadNavigationDeceleration ?? MiriConfig.fallback.trackpadNavigationDeceleration ?? 5.5
-    }
-
-    private var trackpadNavigationMomentumMinVelocity: CGFloat {
-        config.trackpadNavigationMomentumMinVelocity
-            ?? MiriConfig.fallback.trackpadNavigationMomentumMinVelocity
-            ?? 80
-    }
-
-    private var trackpadNavigationVelocityGain: CGFloat {
-        config.trackpadNavigationVelocityGain ?? MiriConfig.fallback.trackpadNavigationVelocityGain ?? 1.35
-    }
-
-    private var trackpadNavigationSnap: TrackpadNavigationSnap {
-        config.trackpadNavigationSnap ?? MiriConfig.fallback.trackpadNavigationSnap ?? .nearestColumn
-    }
-
-    private var trackpadNavigationInvertX: Bool {
-        config.trackpadNavigationInvertX ?? MiriConfig.fallback.trackpadNavigationInvertX ?? false
-    }
-
-    private var trackpadNavigationInvertY: Bool {
-        config.trackpadNavigationInvertY ?? MiriConfig.fallback.trackpadNavigationInvertY ?? false
-    }
-
-    private var trackpadNavigationSettings: TrackpadNavigationSettings {
-        TrackpadNavigationSettings(
-            enabled: trackpadNavigationEnabled,
-            fingers: trackpadNavigationFingers,
-            invertX: trackpadNavigationInvertX,
-            invertY: trackpadNavigationInvertY
-        )
-    }
-
-    private var widthPresetRatios: [CGFloat] {
-        config.presetWidthRatios ?? MiriConfig.fallback.presetWidthRatios ?? [0.5, 0.67, 0.8, 1.0]
-    }
-
-    private var rescanInterval: TimeInterval {
-        TimeInterval(config.rescanIntervalMS ?? MiriConfig.fallback.rescanIntervalMS ?? 1000) / 1000
-    }
-
-    private var restoreOnExit: Bool {
-        config.restoreOnExit ?? MiriConfig.fallback.restoreOnExit ?? true
-    }
-
-    private var hideMethod: HideMethod {
-        config.hideMethod ?? MiriConfig.fallback.hideMethod ?? .skyLightAlpha
     }
 
     private var debugLogging: Bool {
