@@ -498,6 +498,15 @@ final class Miri: NSObject, @unchecked Sendable {
             .compactMap(normalizedKeybinding(_:)))
     }
 
+    fileprivate func handleEventTapDisabled(_ type: CGEventType) {
+        guard let eventTap else {
+            debugLog("event tap disabled by \(type), but tap is nil")
+            return
+        }
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        debugLog("event tap re-enabled after \(type)")
+    }
+
     fileprivate func handleKeyEvent(_ event: CGEvent) -> Bool {
         guard !transientSystemWindowIsActive() else {
             return false
@@ -4085,15 +4094,21 @@ private func eventTapCallback(
     _ event: CGEvent,
     _ refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-    guard type == .keyDown || type == .mouseMoved else {
-        return Unmanaged.passUnretained(event)
-    }
-
     guard let refcon else {
         return Unmanaged.passUnretained(event)
     }
 
     let app = Unmanaged<Miri>.fromOpaque(refcon).takeUnretainedValue()
+
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        app.handleEventTapDisabled(type)
+        return Unmanaged.passUnretained(event)
+    }
+
+    guard type == .keyDown || type == .mouseMoved else {
+        return Unmanaged.passUnretained(event)
+    }
+
     if type == .mouseMoved {
         app.handleMouseMoved(event)
         return Unmanaged.passUnretained(event)
