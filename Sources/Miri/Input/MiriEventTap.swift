@@ -115,7 +115,7 @@ extension Miri {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.perform(command)
+            self?.submit(command)
         }
         return true
     }

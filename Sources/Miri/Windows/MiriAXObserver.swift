@@ -25,6 +25,12 @@ extension Miri {
         }
 
         if let loc = location(of: focusedElement) {
+            if CFAbsoluteTimeGetCurrent() < keyboardFocusAuthorityUntil,
+               let active = activeWindow(),
+               !sameWindow(active.element, focusedElement)
+            {
+                return false
+            }
             clearTrackpadCamera()
             let workspace = workspaces[loc.workspace]
             let changedFocus = activeWorkspace != loc.workspace || workspace.activeColumn != loc.column

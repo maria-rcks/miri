@@ -2,6 +2,41 @@ import CoreGraphics
 import Foundation
 
 extension Miri {
+    func submit(_ command: Command, animateWorkspace: Bool = false) {
+        if shouldQueueFocusCommand(command) {
+            keyboardFocusAuthorityUntil = CFAbsoluteTimeGetCurrent() + 1.5
+        }
+        let shouldSerialize = animationStrategy != .snapshot
+            && shouldQueueFocusCommand(command)
+            && (isApplyingLayout || animationTimer != nil || snapshotAnimationSession != nil)
+        guard shouldSerialize else {
+            perform(command, animateWorkspace: animateWorkspace)
+            return
+        }
+        pendingFocusCommands.append(command)
+    }
+
+    func drainPendingFocusCommands() {
+        guard !pendingFocusCommands.isEmpty,
+              !isApplyingLayout,
+              animationTimer == nil,
+              snapshotAnimationSession == nil
+        else {
+            return
+        }
+        let command = pendingFocusCommands.removeFirst()
+        perform(command)
+    }
+
+    func shouldQueueFocusCommand(_ command: Command) -> Bool {
+        switch command {
+        case .columnLeft, .columnRight, .columnFirst, .columnLast:
+            return true
+        default:
+            return false
+        }
+    }
+
     func perform(_ command: Command, animateWorkspace: Bool = false) {
         clearTrackpadCamera()
         cancelHoverFocus()

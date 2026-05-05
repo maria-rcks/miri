@@ -13,6 +13,7 @@ extension Miri {
         animatedWindowIDs: Set<ObjectIdentifier>? = nil,
         resizingWindowID: ObjectIdentifier? = nil
     ) {
+        layoutRequestGeneration &+= 1
         let viewport = currentViewport()
 
         let targetState = captureLayoutState()
@@ -194,14 +195,28 @@ extension Miri {
         }
     }
 
-    func focus(_ window: ManagedWindow) {
-        setWindowAlpha(1, for: window.windowID)
-        suppressFocusedWindowNotificationsUntil = CFAbsoluteTimeGetCurrent() + 0.2
-        if let app = NSRunningApplication(processIdentifier: window.pid) {
-            app.activate(options: [.activateIgnoringOtherApps])
+    func focus(_ window: ManagedWindow, reveal: Bool = true) {
+        if reveal {
+            setWindowAlpha(1, for: window.windowID)
         }
-        AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(window.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        focusRequestGeneration &+= 1
+        let generation = focusRequestGeneration
+        suppressFocusedWindowNotificationsUntil = CFAbsoluteTimeGetCurrent() + 1.0
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self,
+                  let window,
+                  generation == focusRequestGeneration,
+                  activeWindow() === window
+            else {
+                return
+            }
+            suppressFocusedWindowNotificationsUntil = CFAbsoluteTimeGetCurrent() + 1.0
+            if let app = NSRunningApplication(processIdentifier: window.pid) {
+                app.activate(options: [.activateIgnoringOtherApps])
+            }
+            AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
+            AXUIElementSetAttributeValue(window.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
     }
 
 }

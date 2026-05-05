@@ -283,6 +283,10 @@ extension Miri {
         }
 
         isApplyingLayout = true
+        let requestGeneration = layoutRequestGeneration
+        if focusActiveWindow, let activeWindow = activeWindow() {
+            focus(activeWindow, reveal: false)
+        }
 
         let startLayout = layoutItems(viewport: viewport, state: previousState, parkHidden: false)
         let startByWindow = layoutByWindow(startLayout)
@@ -338,8 +342,11 @@ extension Miri {
                 guard let self, snapshotAnimationSession === session, session.generation == generation, !session.cancelled else {
                     return
                 }
+                guard layoutRequestGeneration == requestGeneration else {
+                    return
+                }
                 snapshotHiddenWindows.removeAll()
-                applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
+                applyLayout(finalLayout, focusActiveWindow: false)
                 restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
                 presentationFrames.removeAll()
                 session.cancel()
@@ -378,7 +385,7 @@ extension Miri {
             }
 
             guard !snapshotMotions.isEmpty else {
-                applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
+                applyLayout(finalLayout, focusActiveWindow: false)
                 restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
                 presentationFrames.removeAll()
                 releaseLayoutLock()
@@ -395,7 +402,7 @@ extension Miri {
                 snapshotOverlayWindow = newOverlay
                 overlay = newOverlay
             } else {
-                applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
+                applyLayout(finalLayout, focusActiveWindow: false)
                 restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
                 presentationFrames.removeAll()
                 releaseLayoutLock()
@@ -429,8 +436,11 @@ extension Miri {
                 guard let self, snapshotAnimationSession === session, session.generation == generation, !session.cancelled else {
                     return
                 }
+                guard layoutRequestGeneration == requestGeneration else {
+                    return
+                }
                 snapshotHiddenWindows.removeAll()
-                applyLayout(finalLayout, focusActiveWindow: focusActiveWindow)
+                applyLayout(finalLayout, focusActiveWindow: false)
                 restoreFloatingVisibility(raise: true, deferred: focusActiveWindow)
                 presentationFrames.removeAll()
                 session.cancel()

@@ -109,14 +109,16 @@ extension Miri {
     func releaseLayoutLock(after delay: TimeInterval = 0.08) {
         guard delay > 0 else {
             isApplyingLayout = false
+            drainPendingFocusCommands()
             return
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, animationTimer == nil else {
+            guard let self, animationTimer == nil, snapshotAnimationSession == nil else {
                 return
             }
             isApplyingLayout = false
+            drainPendingFocusCommands()
         }
     }
 
