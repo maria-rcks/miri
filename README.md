@@ -30,8 +30,9 @@ swift build -c release
 ```
 
 miri needs Accessibility permission, and the event tap may also need Input
-Monitoring permission. If you run it from a terminal, macOS may ask for the
-terminal app itself to get those permissions.
+Monitoring permission. Snapshot animations also need Screen Recording permission
+so miri can capture window images for the animation overlay. If you run it from a
+terminal, macOS may ask for the terminal app itself to get those permissions.
 
 ## What it does
 
