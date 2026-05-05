@@ -1,5 +1,7 @@
 # Miri refactoring summary
 
+Refactoring chat session: https://pi.dev/session/#b109e38490f0e70c93bca2a02e3b86b4
+
 This document summarizes the refactoring work done to split the original `Sources/Miri/Core/Miri.swift` god object into focused source files.
 
 ## Goal
