@@ -4347,6 +4347,10 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return false
         }
 
+        guard location.workspaceIndex == activeWorkspace else {
+            return false
+        }
+
         let ratio = (frame.width / viewport.width).clampedManualWidthRatio
         let previousRatio = location.window.manualWidthRatio
         let oldScrollOffset = location.workspace.scrollOffset
@@ -4357,7 +4361,6 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         let newScrollOffset = virtualOrigin - (frame.minX - viewport.minX)
 
         location.workspace.scrollOffset = newScrollOffset
-        setActiveWorkspace(location.workspaceIndex)
         location.workspace.activeColumn = location.columnIndex
         presentationFrames[ObjectIdentifier(location.window)] = frame
 
@@ -4541,8 +4544,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         case kAXCreatedNotification, kAXUIElementDestroyedNotification:
             scheduleRescan(after: 0.08, adoptFocused: true)
         case kAXWindowResizedNotification:
-            guard tiledWindow(for: element) != nil else {
+            guard let location = tiledWindowLocation(for: element) else {
                 restoreFloatingVisibility(raise: true)
+                return
+            }
+            guard location.workspaceIndex == activeWorkspace else {
                 return
             }
             guard !manualResizeNotificationsSuppressed else {
@@ -4563,6 +4569,9 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             }
         case kAXWindowMovedNotification:
             if manualResizeNotificationsSuppressed, tiledWindow(for: element) != nil {
+                return
+            }
+            if let location = tiledWindowLocation(for: element), location.workspaceIndex != activeWorkspace {
                 return
             }
             guard !systemFrameMatchesCurrentLayout(for: element) else {
