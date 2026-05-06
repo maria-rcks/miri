@@ -1981,13 +1981,13 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         guard let window = activeWindow() else {
             return false
         }
-        return setActiveWindowWidthRatio(widthRatio(for: window) + delta)
+        return setActiveWindowWidthRatio(nudgedWidthRatio(from: widthRatio(for: window), by: delta))
     }
 
     private func nudgeAllWidths(by delta: CGFloat) -> Bool {
         var changed = false
         for window in tiledWindows() {
-            changed = setWidthRatio(widthRatio(for: window) + delta, for: window) || changed
+            changed = setWidthRatio(nudgedWidthRatio(from: widthRatio(for: window), by: delta), for: window) || changed
         }
 
         guard changed else {
@@ -1998,6 +1998,10 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             workspace.scrollOffset = nil
         }
         return true
+    }
+
+    private func nudgedWidthRatio(from ratio: CGFloat, by delta: CGFloat) -> CGFloat {
+        min(max(ratio + delta, 0.05), 1.0)
     }
 
     private func setActiveWindowWidthRatio(_ ratio: CGFloat) -> Bool {
