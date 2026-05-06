@@ -223,7 +223,7 @@ struct MiriConfig: Codable {
         return attributes[.modificationDate] as? Date
     }
 
-    private static func normalize(_ loadedConfig: MiriConfig) -> MiriConfig {
+    static func normalize(_ loadedConfig: MiriConfig) -> MiriConfig {
         var config = loadedConfig
         config.defaultWidthRatio = config.defaultWidthRatio.clampedWidthRatio
         config.presetWidthRatios = normalizeWidthPresets(config.presetWidthRatios)

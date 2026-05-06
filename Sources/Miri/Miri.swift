@@ -3,6 +3,7 @@ import ApplicationServices
 import CoreGraphics
 import Darwin
 import Foundation
+import SwiftUI
 
 final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     private enum LayoutSnapshotTiming {
@@ -89,6 +90,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         .appendingPathComponent("miri-\(ProcessInfo.processInfo.processIdentifier).restore.json")
     private var cleanupWatcher: Process?
     private var statusItem: NSStatusItem?
+    private var settingsWindow: NSWindow?
     private let normalWindowLevel = Int32(CGWindowLevelForKey(.normalWindow))
     private let floatingWindowLevel = Int32(CGWindowLevelForKey(.floatingWindow))
     private let frameTimerInterval: DispatchTimeInterval = .milliseconds(16)
@@ -209,13 +211,12 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
                 systemImage: "pause.circle"
             )))
         }
-        menu.addItem(MiriMenuItemFactory.makeItem(for: MiriMenuDetailsView(snapshot: snapshot)))
         menu.addItem(MiriMenuItemFactory.makeItem(for: MiriMenuDividerView()))
 
         addMenuItem(
-            "Open Settings...",
+            "Settings...",
             systemImage: "gearshape",
-            action: #selector(openConfigFromStatusItem),
+            action: #selector(presentSettingsFromStatusItem),
             to: menu
         )
         addMenuItem(
@@ -331,12 +332,49 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         return image
     }
 
-    @objc private func openConfigFromStatusItem() {
-        guard let url = ensureSettingsFileExists() else {
-            NSSound.beep()
+    @MainActor
+    @objc private func presentSettingsFromStatusItem() {
+        presentSettingsView()
+    }
+
+    @MainActor
+    private func presentSettingsView() {
+        if let settingsWindow {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
-        NSWorkspace.shared.open(url)
+
+        let settingsWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        settingsWindow.title = "Settings"
+        settingsWindow.titleVisibility = .visible
+        settingsWindow.titlebarAppearsTransparent = true
+        settingsWindow.titlebarSeparatorStyle = .none
+        settingsWindow.toolbarStyle = .unified
+        settingsWindow.isReleasedWhenClosed = false
+        settingsWindow.contentView = NSHostingView(rootView: MiriSettingsView(
+            config: config,
+            settingsURL: settingsURL,
+            stateURL: persistentLayoutStateURL,
+            onSave: { [weak self] config in
+                self?.saveConfigFromSettingsWindow(config) ?? false
+            },
+            onRevealSettings: { [weak self] in
+                self?.revealConfigFromStatusItem()
+            },
+            onRevealState: { [weak self] in
+                self?.revealStateFromStatusItem()
+            }
+        ))
+        settingsWindow.center()
+        settingsWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.settingsWindow = settingsWindow
     }
 
     @objc private func revealConfigFromStatusItem() {
@@ -484,9 +522,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             loadedConfig.sourceModificationDate = currentModificationDate
         }
 
-        let previousRescanInterval = rescanInterval
-        let previousRestoreOnExit = restoreOnExit
-        let previousTrackpadSettings = trackpadNavigationSettings
+        return reloadConfigFromDisk(previousSourceURL: previousSourceURL)
+    }
+
+    @discardableResult
+    private func reloadConfigFromDisk(previousSourceURL: URL?) -> Bool {
         let reloaded = MiriConfig.loadWithMetadata(logLoaded: false)
 
         guard reloaded.sourceURL != nil else {
@@ -496,7 +536,47 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return false
         }
 
-        loadedConfig = reloaded
+        applyLoadedConfig(reloaded)
+        let sourcePath = loadedConfig.sourceURL?.path ?? "fallback"
+        print("miri: reloaded config \(sourcePath), \(commandByKeybinding.count) keybindings")
+        return true
+    }
+
+    @discardableResult
+    private func saveConfigFromSettingsWindow(_ newConfig: MiriConfig) -> Bool {
+        let url = settingsURL
+
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            let data = try encoder.encode(newConfig)
+            try data.write(to: url, options: [.atomic])
+
+            applyLoadedConfig(LoadedMiriConfig(
+                config: MiriConfig.normalize(newConfig),
+                sourceURL: url,
+                sourceModificationDate: MiriConfig.modificationDate(for: url)
+            ))
+            updateStatusItem()
+
+            print("miri: saved settings \(url.path)")
+            return true
+        } catch {
+            fputs("miri: failed to save settings \(url.path): \(error)\n", stderr)
+            return false
+        }
+    }
+
+    private func applyLoadedConfig(_ newLoadedConfig: LoadedMiriConfig) {
+        let previousRescanInterval = rescanInterval
+        let previousRestoreOnExit = restoreOnExit
+        let previousTrackpadSettings = trackpadNavigationSettings
+
+        loadedConfig = newLoadedConfig
         configureInput()
 
         if trackpadNavigationSettings != previousTrackpadSettings {
@@ -506,12 +586,8 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             scheduleRescanTimer()
         }
         updateCleanupWatcher(previousRestoreOnExit: previousRestoreOnExit)
-
-        let sourcePath = loadedConfig.sourceURL?.path ?? "fallback"
-        print("miri: reloaded config \(sourcePath), \(commandByKeybinding.count) keybindings")
         rescanWindows(adoptFocused: false)
         projectLayout(focusActiveWindow: false)
-        return true
     }
 
     private func requestAccessibilityPermission() -> Bool {
