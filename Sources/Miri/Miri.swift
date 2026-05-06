@@ -2001,7 +2001,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     }
 
     private func nudgedWidthRatio(from ratio: CGFloat, by delta: CGFloat) -> CGFloat {
-        min(max(ratio + delta, 0.05), 1.0)
+        let nudgedRatio = ratio + delta
+        if ratio <= 1.0, delta > 0 {
+            return min(nudgedRatio, 1.0)
+        }
+        return nudgedRatio.clampedManualWidthRatio
     }
 
     private func setActiveWindowWidthRatio(_ ratio: CGFloat) -> Bool {
