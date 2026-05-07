@@ -672,6 +672,10 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let keyText = keyboardText(from: event)
+        if isSystemWindowSwitcherEvent(modifiers: modifiers, keyCode: keyCode, keyText: keyText) {
+            releaseExpectedFocusedWindow()
+        }
+
         guard !isExcludedKeybinding(modifiers: modifiers, keyCode: keyCode, keyText: keyText) else {
             return false
         }
@@ -684,6 +688,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             self?.handle(command)
         }
         return true
+    }
+
+    private func isSystemWindowSwitcherEvent(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> Bool {
+        modifiers.contains(.maskCommand)
+            && normalizedKeyNames(keyCode: keyCode, keyText: keyText, includeFnNavigationAliases: false).contains("tab")
     }
 
     private func handle(_ command: Command) {
@@ -2714,7 +2723,17 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return
         }
 
-        expectedFocusedWindowUntil = max(expectedFocusedWindowUntil, CFAbsoluteTimeGetCurrent() + 0.75)
+        releaseExpectedFocusedWindow()
+    }
+
+    private func releaseExpectedFocusedWindow() {
+        focusRequestGeneration &+= 1
+        focusVerificationGeneration &+= 1
+        cancelColumnNavigationFocus()
+        cancelHoverFocus()
+        expectedFocusedWindow = nil
+        expectedFocusedWindowUntil = 0
+        focusedWindowAdoptionSuppressedUntil = 0
     }
 
     private func projectLayout(
@@ -3119,6 +3138,18 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
         let state = captureLayoutState()
         let layout = layoutItems(viewport: viewport, state: state, parkHidden: false)
+        if hoverFocusMode == .edgeOrVisible,
+           let edgeTarget = hoverFocusEdgeTarget(
+                point: point,
+                workspace: workspace,
+                workspaceIndex: activeWorkspace,
+                state: state,
+                viewport: viewport
+           )
+        {
+            return edgeTarget
+        }
+
         for item in layout where item.visible && item.frame.contains(point) {
             guard hoverToFocusAllowed(for: item.window) else {
                 continue
@@ -3151,6 +3182,35 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         }
 
         return nil
+    }
+
+    private func hoverFocusEdgeTarget(
+        point: CGPoint,
+        workspace: Workspace,
+        workspaceIndex: Int,
+        state: LayoutState,
+        viewport: CGRect
+    ) -> (window: ManagedWindow, workspaceIndex: Int, columnIndex: Int, immediate: Bool)? {
+        let activeColumn = activeColumn(in: workspace, workspaceIndex: workspaceIndex, state: state)
+        let targetColumn: Int
+        if point.x >= viewport.maxX - hoverFocusEdgeTriggerWidth {
+            targetColumn = activeColumn + 1
+        } else if point.x <= viewport.minX + hoverFocusEdgeTriggerWidth {
+            targetColumn = activeColumn - 1
+        } else {
+            return nil
+        }
+
+        guard workspace.columns.indices.contains(targetColumn) else {
+            return nil
+        }
+
+        let window = workspace.columns[targetColumn]
+        guard hoverToFocusAllowed(for: window) else {
+            return nil
+        }
+
+        return (window, workspaceIndex, targetColumn, true)
     }
 
     private func viewportContains(_ point: CGPoint, viewport: CGRect) -> Bool {
@@ -3994,6 +4054,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return false
         }
 
+        if focusChangeLooksUserInitiated(pid: pid, expectedWindow: expectedWindow) {
+            releaseExpectedFocusedWindow()
+            return false
+        }
+
         guard !isApplyingLayout, animationTimer == nil else {
             debugLog("ignoring focus drift during column animation")
             return true
@@ -4005,6 +4070,28 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
         debugLog("ignoring focus drift while targeting \(expectedWindow.appName)")
         focus(expectedWindow, verify: false)
+        return true
+    }
+
+    private func focusChangeLooksUserInitiated(pid: pid_t, expectedWindow: ManagedWindow) -> Bool {
+        guard !isApplyingLayout, animationTimer == nil else {
+            return false
+        }
+
+        guard pid == expectedWindow.pid else {
+            return true
+        }
+
+        guard let app = NSRunningApplication(processIdentifier: pid),
+              let focused = focusedWindow(for: app)
+        else {
+            return false
+        }
+
+        if sameWindow(expectedWindow.element, focused) {
+            return false
+        }
+
         return true
     }
 
