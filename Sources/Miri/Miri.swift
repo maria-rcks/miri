@@ -20,6 +20,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
     private struct TransientSystemWindow {
         var element: AXUIElement
+        var recoverable: Bool
     }
 
     private var loadedConfig = MiriConfig.loadWithMetadata()
@@ -2400,11 +2401,17 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     }
 
     private func isManageableWindow(_ element: AXUIElement) -> Bool {
-        guard axString(element, kAXRoleAttribute) == kAXWindowRole else {
+        let role = axString(element, kAXRoleAttribute)
+        let subrole = axString(element, kAXSubroleAttribute)
+
+        guard role == kAXWindowRole else {
             return false
         }
 
-        let subrole = axString(element, kAXSubroleAttribute)
+        guard !isTransientRole(role), !isTransientSubrole(subrole) else {
+            return false
+        }
+
         if let subrole, subrole != kAXStandardWindowSubrole {
             return false
         }
@@ -3021,12 +3028,17 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
     private func transientSystemWindows() -> [TransientSystemWindow] {
         transientCheckApplications.compactMap { app in
-            guard let window = focusedWindow(for: app),
-                  isTransientSystemWindow(window, app: app)
+            if let window = focusedWindow(for: app),
+               isTransientSystemWindow(window, app: app) {
+                return TransientSystemWindow(element: window, recoverable: true)
+            }
+
+            guard let focusedElement = focusedUIElement(for: app),
+                  isTransientFocusedElement(focusedElement, app: app)
             else {
                 return nil
             }
-            return TransientSystemWindow(element: window)
+            return TransientSystemWindow(element: focusedElement, recoverable: false)
         }
     }
 
@@ -3039,6 +3051,9 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         let viewport = currentViewport()
         var moved = false
         for transient in windows {
+            guard transient.recoverable else {
+                continue
+            }
             setWindowAlpha(1, for: SkyLight.shared.windowID(for: transient.element))
             if let frame = axFrame(transient.element), transientFrameNeedsRecovery(frame, viewport: viewport) {
                 setAXPosition(centeredOrigin(for: frame, in: viewport), for: transient.element)
@@ -3113,16 +3128,62 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         return (value as! AXUIElement)
     }
 
+    private func focusedUIElement(for app: NSRunningApplication) -> AXUIElement? {
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &value) == .success,
+              let value
+        else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
     private func isTransientSystemWindow(_ element: AXUIElement, app: NSRunningApplication) -> Bool {
         let role = axString(element, kAXRoleAttribute)
         let subrole = axString(element, kAXSubroleAttribute)
-        if role == kAXSheetRole || role == "AXSheet" || role == "AXDialog" {
+        if isTransientRole(role) {
             return true
         }
-        if subrole == "AXSystemDialog" || subrole == "AXDialog" {
+        if isTransientSubrole(subrole) {
             return true
         }
         return isOpenAndSavePanelService(app)
+    }
+
+    private func isTransientFocusedElement(_ element: AXUIElement, app: NSRunningApplication) -> Bool {
+        var current: AXUIElement? = element
+        for _ in 0..<8 {
+            guard let candidate = current else {
+                break
+            }
+
+            if isTransientSystemWindow(candidate, app: app) {
+                return true
+            }
+
+            current = axElement(candidate, kAXParentAttribute)
+        }
+
+        return false
+    }
+
+    private func isTransientRole(_ role: String?) -> Bool {
+        switch role {
+        case kAXSheetRole, "AXSheet", "AXDialog", "AXMenu", "AXMenuItem", "AXPopover":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func isTransientSubrole(_ subrole: String?) -> Bool {
+        switch subrole {
+        case "AXSystemDialog", "AXDialog", "AXPopover", "AXMenu", "AXFloatingWindow":
+            return true
+        default:
+            return false
+        }
     }
 
     private func setWindowAlpha(_ alpha: Float, for windowID: UInt32?) {
@@ -4792,6 +4853,16 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             return nil
         }
         return value as? Bool
+    }
+
+    private func axElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value
+        else {
+            return nil
+        }
+        return (value as! AXUIElement)
     }
 
     private func axFrame(_ element: AXUIElement) -> CGRect? {
