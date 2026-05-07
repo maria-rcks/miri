@@ -23,6 +23,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         var recoverable: Bool
     }
 
+    private struct KeyEventIdentity: Hashable {
+        var keyCode: Int64
+        var modifiers: UInt64
+    }
+
     private var loadedConfig = MiriConfig.loadWithMetadata()
     private var config: MiriConfig {
         loadedConfig.config
@@ -34,6 +39,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     private var observers: [pid_t: AXObserver] = [:]
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
+    private var swallowedKeyUps = Set<KeyEventIdentity>()
     private var commandByKeybinding: [String: Command] = [:]
     private var excludedKeybindingSet = Set<String>()
     private var scheduledRescanTimer: DispatchSourceTimer?
@@ -661,17 +667,13 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
     private func installEventTap() {
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+            | CGEventMask(1 << CGEventType.keyUp.rawValue)
             | CGEventMask(1 << CGEventType.mouseMoved.rawValue)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
 
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: eventTapCallback,
-            userInfo: refcon
-        ) else {
+        guard let tap = makeEventTap(location: .cghidEventTap, mask: mask, refcon: refcon)
+            ?? makeEventTap(location: .cgSessionEventTap, mask: mask, refcon: refcon)
+        else {
             fputs("miri: unable to create event tap. Check Accessibility/Input Monitoring permissions.\n", stderr)
             exit(1)
         }
@@ -685,6 +687,21 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         eventTapSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func makeEventTap(
+        location: CGEventTapLocation,
+        mask: CGEventMask,
+        refcon: UnsafeMutableRawPointer
+    ) -> CFMachPort? {
+        CGEvent.tapCreate(
+            tap: location,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: eventTapCallback,
+            userInfo: refcon
+        )
     }
 
     fileprivate func reenableEventTap() {
@@ -740,14 +757,19 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
             .compactMap(normalizedKeybinding(_:)))
     }
 
-    fileprivate func handleKeyEvent(_ event: CGEvent) -> Bool {
+    fileprivate func handleKeyEvent(_ event: CGEvent, type: CGEventType) -> Bool {
+        let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn])
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let identity = keyEventIdentity(keyCode: keyCode, modifiers: modifiers)
+
+        if type == .keyUp {
+            return swallowedKeyUps.remove(identity) != nil
+        }
+
         guard !transientSystemWindowIsActive() else {
             return false
         }
 
-        let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn])
-
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let keyText = keyboardText(from: event)
         if isSystemWindowSwitcherEvent(modifiers: modifiers, keyCode: keyCode, keyText: keyText) {
             releaseExpectedFocusedWindow()
@@ -764,7 +786,12 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             self?.handle(command)
         }
+        swallowedKeyUps.insert(identity)
         return true
+    }
+
+    private func keyEventIdentity(keyCode: Int64, modifiers: CGEventFlags) -> KeyEventIdentity {
+        KeyEventIdentity(keyCode: keyCode, modifiers: modifiers.rawValue)
     }
 
     private func isSystemWindowSwitcherEvent(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> Bool {
@@ -3182,7 +3209,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
     private func isTransientSubrole(_ subrole: String?) -> Bool {
         switch subrole {
-        case "AXSystemDialog", "AXDialog", "AXPopover", "AXMenu", "AXFloatingWindow":
+        case "AXSystemDialog", "AXDialog", "AXPopover", "AXMenu":
             return true
         default:
             return false
@@ -4912,7 +4939,7 @@ private func eventTapCallback(
         return nil
     }
 
-    guard type == .keyDown || type == .mouseMoved else {
+    guard type == .keyDown || type == .keyUp || type == .mouseMoved else {
         return Unmanaged.passUnretained(event)
     }
 
@@ -4921,7 +4948,7 @@ private func eventTapCallback(
         return Unmanaged.passUnretained(event)
     }
 
-    if app.handleKeyEvent(event) {
+    if app.handleKeyEvent(event, type: type) {
         return nil
     }
     return Unmanaged.passUnretained(event)
