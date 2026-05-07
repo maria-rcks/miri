@@ -23,11 +23,6 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         var recoverable: Bool
     }
 
-    private struct KeyEventIdentity: Hashable {
-        var keyCode: Int64
-        var modifiers: UInt64
-    }
-
     private var loadedConfig = MiriConfig.loadWithMetadata()
     private var config: MiriConfig {
         loadedConfig.config
@@ -39,7 +34,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     private var observers: [pid_t: AXObserver] = [:]
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
-    private var swallowedKeyUps = Set<KeyEventIdentity>()
+    private var swallowedKeyUps = Set<Int64>()
     private var commandByKeybinding: [String: Command] = [:]
     private var excludedKeybindingSet = Set<String>()
     private var scheduledRescanTimer: DispatchSourceTimer?
@@ -760,11 +755,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     fileprivate func handleKeyEvent(_ event: CGEvent, type: CGEventType) -> Bool {
         let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn])
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let identity = keyEventIdentity(keyCode: keyCode, modifiers: modifiers)
 
         if type == .keyUp {
-            return swallowedKeyUps.remove(identity) != nil
+            return swallowedKeyUps.remove(keyCode) != nil
         }
+        swallowedKeyUps.remove(keyCode)
 
         guard !transientSystemWindowIsActive() else {
             return false
@@ -786,12 +781,8 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             self?.handle(command)
         }
-        swallowedKeyUps.insert(identity)
+        swallowedKeyUps.insert(keyCode)
         return true
-    }
-
-    private func keyEventIdentity(keyCode: Int64, modifiers: CGEventFlags) -> KeyEventIdentity {
-        KeyEventIdentity(keyCode: keyCode, modifiers: modifiers.rawValue)
     }
 
     private func isSystemWindowSwitcherEvent(modifiers: CGEventFlags, keyCode: Int64, keyText: String) -> Bool {
