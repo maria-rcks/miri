@@ -1109,7 +1109,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         var key: String?
         for part in parts {
             switch part {
-            case "cmd", "command":
+            case "cmd", "command", "win", "windows", "super", "meta":
                 modifiers.insert("cmd")
             case "ctrl", "control":
                 modifiers.insert("ctrl")
@@ -2827,7 +2827,8 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         layoutLockDelay: TimeInterval = 0.08,
         prefocusActiveWindow: Bool = false,
         snapshotTiming: LayoutSnapshotTiming = .immediate,
-        verifyActiveLayout: Bool = true
+        verifyActiveLayout: Bool = true,
+        suppressManualResizeEvents: Bool = true
     ) {
         let viewport = currentViewport()
         writeLayoutSnapshots(viewport: viewport, timing: animated ? .deferred : snapshotTiming)
@@ -2836,7 +2837,9 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         updateStatusItem()
         debugLog("layout workspace=\(targetState.activeWorkspace + 1) tiled=\(tiledWindows().count) floating=\(floatingWindows.count) animated=\(animated)")
         let duration = animationDuration ?? self.animationDuration
-        suppressManualResizeNotifications(for: (animated ? duration : 0) + max(layoutLockDelay, 0.25))
+        if suppressManualResizeEvents {
+            suppressManualResizeNotifications(for: (animated ? duration : 0) + max(layoutLockDelay, 0.25))
+        }
         if focusActiveWindow {
             markExpectedFocusedWindow(
                 for: activeWindow(),
@@ -4623,7 +4626,12 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         stopAnimation(clearPresentation: false)
 
         if updateManualWidthRatio(for: element) {
-            projectLayout(focusActiveWindow: false, layoutLockDelay: 0, snapshotTiming: .deferred)
+            projectLayout(
+                focusActiveWindow: false,
+                layoutLockDelay: 0,
+                snapshotTiming: .deferred,
+                suppressManualResizeEvents: false
+            )
         }
 
         scheduleManualResizeEnd(for: element)
@@ -4653,7 +4661,11 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
             if manualResizeElement.map({ sameWindow($0, element) }) == true {
                 _ = updateManualWidthRatio(for: element)
-                projectLayout(focusActiveWindow: false, layoutLockDelay: 0.02)
+                projectLayout(
+                    focusActiveWindow: false,
+                    layoutLockDelay: 0.02,
+                    suppressManualResizeEvents: false
+                )
                 manualResizeElement = nil
             }
         }
