@@ -44,7 +44,7 @@
     "move_column_to_workspace_2": ["cmd+shift+2"],
     "move_column_to_workspace_3": ["cmd+shift+3"],
     "move_column_to_workspace_4": ["cmd+shift+4"],
-    "move_column_to_workspace_5": ["cmd+shift+5"],
+    "move_column_to_workspace_5": ["cmd+ctrl+shift+5"],
     "move_column_to_workspace_6": ["cmd+shift+6"],
     "move_column_to_workspace_7": ["cmd+shift+7"],
     "move_column_to_workspace_8": ["cmd+shift+8"],

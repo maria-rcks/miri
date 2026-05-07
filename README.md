@@ -100,6 +100,9 @@ miri loads the first config file it can read:
 - `$XDG_CONFIG_HOME/miri/config.json`
 - `~/.config/miri/config.json`
 
+`$XDG_CONFIG_HOME/miri/config.json` is checked only when `XDG_CONFIG_HOME` is
+set. If it is unset, miri falls back to `~/.config/miri/config.json`.
+
 The loaded config file is watched for changes. Saving valid JSON reloads
 keybindings, rules, layout settings, animations, and trackpad settings in place.
 If a save cannot be parsed, miri keeps running with the previous config.
@@ -139,7 +142,8 @@ The repo includes a full default config. A compact version looks like this:
     "column_left": ["cmd+h"],
     "column_right": ["cmd+l"],
     "workspace_down": ["cmd+j"],
-    "workspace_up": ["cmd+k"]
+    "workspace_up": ["cmd+k"],
+    "move_column_to_workspace_5": ["cmd+ctrl+shift+5"]
   },
   "trackpad_navigation": true,
   "trackpad_navigation_fingers": 3,
@@ -169,9 +173,9 @@ The repo includes a full default config. A compact version looks like this:
 
 `keybindings` is merged with the built-in defaults by action name, so a config
 can override only the actions it cares about. Set an action to `[]` to disable
-it. `excluded_keybindings` always wins, which is why the default `Cmd+Shift+5`
-screen-recording shortcut passes through even though workspace 5 has a move
-binding. See `miri.config.json` for the full command-name list.
+it. `excluded_keybindings` always wins, so the default `Cmd+Shift+5`
+screen-recording shortcut passes through; moving a column to workspace 5 uses
+`Cmd+Ctrl+Shift+5`. See `miri.config.json` for the full command-name list.
 
 Keybinding strings support the standard modifiers `cmd`, `ctrl`, `shift`,
 `alt`/`option`, and `fn`/`globe`. This makes MacBook keyboard shortcuts like

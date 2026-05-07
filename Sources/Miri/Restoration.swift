@@ -6,17 +6,19 @@ import Foundation
 
 enum WindowRestoration {
     static func restore(windowIDs: Set<UInt32>, floatingWindowIDs: Set<UInt32>, viewport: CGRect) {
-        let restoreWindowIDs = windowIDs.union(floatingWindowIDs)
-        guard !restoreWindowIDs.isEmpty else {
+        guard !windowIDs.isEmpty || !floatingWindowIDs.isEmpty else {
             return
         }
 
-        for windowID in restoreWindowIDs {
+        for windowID in windowIDs {
             SkyLight.shared.setAlpha(1, for: windowID)
             SkyLight.shared.setLevel(Int32(CGWindowLevelForKey(.normalWindow)), for: windowID)
         }
+        for windowID in floatingWindowIDs {
+            SkyLight.shared.setAlpha(1, for: windowID)
+        }
 
-        guard AXIsProcessTrusted() else {
+        guard !windowIDs.isEmpty, AXIsProcessTrusted() else {
             return
         }
 
@@ -30,7 +32,7 @@ enum WindowRestoration {
 
             for element in axWindows {
                 guard let windowID = SkyLight.shared.windowID(for: element),
-                      restoreWindowIDs.contains(windowID)
+                      windowIDs.contains(windowID)
                 else {
                     continue
                 }
@@ -46,7 +48,8 @@ enum CleanupWatcher {
     static func run(parentPID: pid_t, snapshotPath: String) -> Never {
         while true {
             if !FileManager.default.fileExists(atPath: snapshotPath) {
-                exit(0)
+                usleep(250_000)
+                continue
             }
 
             if kill(parentPID, 0) == -1 && errno == ESRCH {
