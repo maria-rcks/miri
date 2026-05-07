@@ -177,9 +177,9 @@ it. `excluded_keybindings` always wins, so the default `Cmd+Shift+5`
 screen-recording shortcut passes through; moving a column to workspace 5 uses
 `Cmd+Ctrl+Shift+5`. See `miri.config.json` for the full command-name list.
 
-Keybinding strings support the standard modifiers `cmd`, `ctrl`, `shift`,
-`alt`/`option`, and `fn`/`globe`. This makes MacBook keyboard shortcuts like
-`cmd+fn+left` configurable without requiring a separate Home/End key.
+Keybinding strings support the standard modifiers `cmd`/`win`/`super`, `ctrl`,
+`shift`, `alt`/`option`, and `fn`/`globe`. This makes MacBook keyboard shortcuts
+like `cmd+fn+left` configurable without requiring a separate Home/End key.
 
 Useful string settings:
 
