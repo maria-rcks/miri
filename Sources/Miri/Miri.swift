@@ -340,6 +340,7 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     @MainActor
     private func presentSettingsView() {
         if let settingsWindow {
+            settingsWindow.contentView = makeSettingsContentView()
             settingsWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -357,7 +358,16 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         settingsWindow.titlebarSeparatorStyle = .none
         settingsWindow.toolbarStyle = .unified
         settingsWindow.isReleasedWhenClosed = false
-        settingsWindow.contentView = NSHostingView(rootView: MiriSettingsView(
+        settingsWindow.contentView = makeSettingsContentView()
+        settingsWindow.center()
+        settingsWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.settingsWindow = settingsWindow
+    }
+
+    @MainActor
+    private func makeSettingsContentView() -> NSView {
+        NSHostingView(rootView: MiriSettingsView(
             config: config,
             settingsURL: settingsURL,
             stateURL: persistentLayoutStateURL,
@@ -371,10 +381,6 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
                 self?.revealStateFromStatusItem()
             }
         ))
-        settingsWindow.center()
-        settingsWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        self.settingsWindow = settingsWindow
     }
 
     @objc private func revealConfigFromStatusItem() {
@@ -527,12 +533,24 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
     @discardableResult
     private func reloadConfigFromDisk(previousSourceURL: URL?) -> Bool {
-        let reloaded = MiriConfig.loadWithMetadata(logLoaded: false)
-
-        guard reloaded.sourceURL != nil else {
-            if previousSourceURL != nil {
-                fputs("miri: config reload skipped; keeping previous config\n", stderr)
+        guard let previousSourceURL else {
+            let reloaded = MiriConfig.loadWithMetadata(logLoaded: false)
+            guard reloaded.sourceURL != nil else {
+                return false
             }
+
+            applyLoadedConfig(reloaded)
+            let sourcePath = loadedConfig.sourceURL?.path ?? "fallback"
+            print("miri: reloaded config \(sourcePath), \(commandByKeybinding.count) keybindings")
+            return true
+        }
+
+        let reloaded: LoadedMiriConfig
+        switch MiriConfig.load(from: previousSourceURL, logLoaded: false) {
+        case let .loaded(loaded) where loaded.sourceURL == previousSourceURL:
+            reloaded = loaded
+        case .loaded, .notFound, .parseError:
+            fputs("miri: config reload skipped; keeping previous config\n", stderr)
             return false
         }
 
@@ -2242,6 +2260,9 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
     }
 
     @objc private func applicationTerminated(_ notification: Notification) {
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            stopObservingApp(pid: app.processIdentifier)
+        }
         scheduleRescan(after: 0.1, adoptFocused: false, projectLayoutAfter: true)
     }
 
@@ -4426,10 +4447,14 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
         pendingSnapshotViewport = nil
         clearAppliedLayoutCache()
         let viewport = currentViewport()
-        for window in allWindows() {
+        for window in tiledWindows() {
             setWindowAlpha(1, for: window.windowID)
             setWindowLevel(normalWindowLevel, for: window.windowID)
             setAXFrame(viewport, for: window.element)
+        }
+        for window in floatingWindows {
+            setWindowAlpha(1, for: window.windowID)
+            setWindowLevel(normalWindowLevel, for: window.windowID)
         }
         try? FileManager.default.removeItem(at: restoreStateURL)
     }
@@ -4691,6 +4716,14 @@ final class Miri: NSObject, NSMenuDelegate, @unchecked Sendable {
 
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         observers[pid] = observer
+    }
+
+    private func stopObservingApp(pid: pid_t) {
+        guard let observer = observers.removeValue(forKey: pid) else {
+            return
+        }
+
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
     }
 
     fileprivate func handleAXNotification(_ name: String, element: AXUIElement) {

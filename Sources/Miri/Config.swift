@@ -48,6 +48,12 @@ struct LoadedMiriConfig {
     var sourceModificationDate: Date?
 }
 
+enum MiriConfigLoadResult {
+    case loaded(LoadedMiriConfig)
+    case notFound
+    case parseError(Error)
+}
+
 struct MiriConfig: Codable {
     var defaultWidthRatio: CGFloat
     var presetWidthRatios: [CGFloat]?
@@ -162,7 +168,7 @@ struct MiriConfig: Codable {
         "move_column_to_workspace_2": ["cmd+shift+2"],
         "move_column_to_workspace_3": ["cmd+shift+3"],
         "move_column_to_workspace_4": ["cmd+shift+4"],
-        "move_column_to_workspace_5": ["cmd+shift+5"],
+        "move_column_to_workspace_5": ["cmd+ctrl+shift+5"],
         "move_column_to_workspace_6": ["cmd+shift+6"],
         "move_column_to_workspace_7": ["cmd+shift+7"],
         "move_column_to_workspace_8": ["cmd+shift+8"],
@@ -188,32 +194,51 @@ struct MiriConfig: Codable {
     }
 
     static func loadWithMetadata(logLoaded: Bool = true, logErrors: Bool = true) -> LoadedMiriConfig {
-        let candidates = configCandidates()
-        let decoder = JSONDecoder()
+        let explicitConfigURL = explicitConfigURL()
+        let candidates = configCandidates(explicitConfigURL: explicitConfigURL)
 
         for url in candidates {
-            guard let data = try? Data(contentsOf: url) else {
+            switch load(from: url, logLoaded: logLoaded, logErrors: logErrors) {
+            case let .loaded(loaded):
+                return loaded
+            case .notFound:
                 continue
-            }
-
-            do {
-                let config = normalize(try decoder.decode(MiriConfig.self, from: data))
-                if logLoaded {
-                    print("miri: loaded config \(url.path)")
+            case let .parseError(error):
+                if url == explicitConfigURL {
+                    if logErrors {
+                        fputs("miri: explicit config \(url.path) is invalid; not falling back: \(error)\n", stderr)
+                    }
+                    return LoadedMiriConfig(config: .fallback, sourceURL: nil, sourceModificationDate: nil)
                 }
-                return LoadedMiriConfig(
-                    config: config,
-                    sourceURL: url,
-                    sourceModificationDate: modificationDate(for: url)
-                )
-            } catch {
-                if logErrors {
-                    fputs("miri: failed to parse config \(url.path): \(error)\n", stderr)
-                }
+                continue
             }
         }
 
         return LoadedMiriConfig(config: .fallback, sourceURL: nil, sourceModificationDate: nil)
+    }
+
+    static func load(from url: URL, logLoaded: Bool = true, logErrors: Bool = true) -> MiriConfigLoadResult {
+        guard let data = try? Data(contentsOf: url) else {
+            return .notFound
+        }
+
+        do {
+            let config = normalize(try JSONDecoder().decode(MiriConfig.self, from: data))
+            if logLoaded {
+                print("miri: loaded config \(url.path)")
+            }
+            let loaded = LoadedMiriConfig(
+                config: config,
+                sourceURL: url,
+                sourceModificationDate: modificationDate(for: url)
+            )
+            return .loaded(loaded)
+        } catch {
+            if logErrors {
+                fputs("miri: failed to parse config \(url.path): \(error)\n", stderr)
+            }
+            return .parseError(error)
+        }
     }
 
     static func modificationDate(for url: URL) -> Date? {
@@ -274,11 +299,18 @@ struct MiriConfig: Codable {
         return unique.isEmpty ? nil : unique
     }
 
-    private static func configCandidates() -> [URL] {
+    private static func explicitConfigURL() -> URL? {
+        guard let path = ProcessInfo.processInfo.environment["MIRI_CONFIG"], !path.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+    }
+
+    private static func configCandidates(explicitConfigURL: URL?) -> [URL] {
         var urls: [URL] = []
 
-        if let path = ProcessInfo.processInfo.environment["MIRI_CONFIG"], !path.isEmpty {
-            urls.append(URL(fileURLWithPath: NSString(string: path).expandingTildeInPath))
+        if let explicitConfigURL {
+            urls.append(explicitConfigURL)
         }
 
         urls.append(URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("miri.config.json"))
